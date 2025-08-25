@@ -83,6 +83,7 @@ class Ball {
         this.vy = 0;
         this.landed = false;
         this.firstCollision = null;
+        console.log(`Ball reset to position: x=${this.x.toFixed(1)}, y=${this.y.toFixed(1)} on ${this.game.LOGICAL_WIDTH}x${this.game.LOGICAL_HEIGHT} canvas`);
     }
     
     getPerspectiveFactor() {
@@ -116,26 +117,43 @@ class Ball {
     draw(ctx, scale) {
         // Calculate perspective-based radius - ball appears smaller when "farther" (higher on screen)
         const perspectiveFactor = this.getPerspectiveFactor();
-        const radius = this.baseRadius * scale * perspectiveFactor;
+        const radius = Math.max(8, this.baseRadius * scale * perspectiveFactor); // Minimum 8px radius for visibility
         
         // Add slight shadow for 3D depth effect
         ctx.save();
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.4;
         ctx.fillStyle = '#000000';
         ctx.beginPath();
-        ctx.arc(this.x + 2, this.y + 2, radius, 0, Math.PI * 2);
+        ctx.arc(this.x + 3, this.y + 3, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
         
-        // Draw main ball with perspective scaling
-        ctx.fillStyle = CONFIG.COLORS.BALL_GOLD;
+        // Draw main ball with enhanced gold gradient
+        const gradient = ctx.createRadialGradient(
+            this.x - radius * 0.3, this.y - radius * 0.3, 0,
+            this.x, this.y, radius
+        );
+        gradient.addColorStop(0, '#FFEF94');  // Light gold highlight
+        gradient.addColorStop(0.4, CONFIG.COLORS.BALL_GOLD); // Main gold
+        gradient.addColorStop(1, '#B8860B');   // Darker gold edge
+        
+        ctx.fillStyle = gradient;
         ctx.strokeStyle = CONFIG.COLORS.BALL_OUTLINE;
-        ctx.lineWidth = 2 * scale * perspectiveFactor;
+        ctx.lineWidth = Math.max(1, 2 * scale * perspectiveFactor);
 
         ctx.beginPath();
         ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
+        
+        // Add sparkle effect for premium feel
+        ctx.save();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(this.x - radius * 0.3, this.y - radius * 0.3, Math.max(1, radius * 0.1), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
     }
 }
 
@@ -274,7 +292,7 @@ class Bucket {
             }
         }
 
-        if (bucketImage) {
+        if (bucketImage && bucketImage.complete && bucketImage.naturalWidth > 0) {
             // Apply perspective scaling and slight vertical offset for 3D effect
             const perspectiveWidth = this.width * scale;
             const perspectiveHeight = this.height * scale;
@@ -290,17 +308,53 @@ class Bucket {
             
             ctx.drawImage(bucketImage, drawX, drawY, perspectiveWidth, perspectiveHeight);
         } else {
-            // Enhanced fallback with 3D perspective
+            // Professional 3D bucket rendering when sprites aren't available
+            const perspectiveWidth = this.width * scale;
+            const perspectiveHeight = this.height * scale;
+            const drawX = this.x - perspectiveWidth / 2;
+            const drawY = this.y - perspectiveHeight;
+            
             ctx.save();
             ctx.translate(this.x, this.y);
             ctx.rotate(this.tilt * Math.PI / 180);
             ctx.translate(-this.x, -this.y);
-            this.drawFallback(ctx);
+            
+            // Draw 3D bucket with gradients instead of flat rectangle
+            const gradient = ctx.createLinearGradient(drawX, drawY, drawX + perspectiveWidth, drawY + perspectiveHeight);
+            gradient.addColorStop(0, '#333333');
+            gradient.addColorStop(0.3, '#111111');
+            gradient.addColorStop(0.7, '#000000');
+            gradient.addColorStop(1, '#111111');
+            
+            ctx.fillStyle = gradient;
+            ctx.strokeStyle = '#555555';
+            ctx.lineWidth = 2;
+            
+            // Draw bucket shape
+            ctx.beginPath();
+            ctx.moveTo(drawX, drawY + perspectiveHeight);
+            ctx.lineTo(drawX + perspectiveWidth, drawY + perspectiveHeight);
+            ctx.lineTo(drawX + perspectiveWidth * 0.9, drawY);
+            ctx.lineTo(drawX + perspectiveWidth * 0.1, drawY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            // Add rim highlight
+            ctx.strokeStyle = '#666666';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(drawX + perspectiveWidth * 0.1, drawY);
+            ctx.lineTo(drawX + perspectiveWidth * 0.9, drawY);
+            ctx.stroke();
+            
             ctx.restore();
         }
     }
 
     drawFallback(ctx) {
+        // This method is now replaced with enhanced 3D rendering in draw() method
+        // Keeping for backward compatibility but not used
         ctx.fillStyle = CONFIG.COLORS.BUCKET_MATTE_BLACK;
         const bounds = this.getBounds();
         ctx.beginPath();
@@ -772,10 +826,8 @@ class BucketBallGame {
         this.lawn.draw(this.ctx, this.state);
         this.bucket.draw(this.ctx);
 
-        // Draw ball only if it's not landed inside the bucket (visual tweak)
-        if(this.state !== GameState.RESOLVING) {
-            this.ball.draw(this.ctx, this.scale);
-        }
+        // Always draw ball - it should be visible for player interaction
+        this.ball.draw(this.ctx, this.scale);
 
         // --- Draw UI elements ---
         this.drawHUD();
