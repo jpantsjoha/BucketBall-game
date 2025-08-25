@@ -1,8 +1,14 @@
 const CONFIG = {
-    // Game mechanics
-    LOGICAL_WIDTH: 1080,
-    LOGICAL_HEIGHT: 1920,
+    // Game mechanics - Dynamic sizing instead of fixed logical dimensions
+    MIN_ASPECT_RATIO: 0.5,  // Minimum width/height ratio (very tall)
+    MAX_ASPECT_RATIO: 2.0,   // Maximum width/height ratio (very wide)
+    PREFERRED_ASPECT_RATIO: 1080/1920, // Original design ratio
+    BASE_WIDTH: 1080,        // Base reference for scaling
+    BASE_HEIGHT: 1920,
     THROW_COUNT: 5,
+    
+    // Auto-reset timing
+    MISS_AUTO_RESET_DELAY: 2000, // 2 seconds after ball settles and misses
 
     // Physics
     GRAVITY: 2000, // px/s²
@@ -22,6 +28,13 @@ const CONFIG = {
     AUTO_DISARM_DELAY: 4000, // ms
     SETTLE_VELOCITY_THRESHOLD: 10, // px/s
     SETTLE_DURATION: 400, // ms
+    
+    // 3rd Person POV Physics
+    POV_ANGLE: 25, // degrees - looking down at 25 degree angle
+    PLAYER_HEIGHT: 60, // inches (5 feet)
+    BUCKET_HEIGHT: 10, // inches
+    REAL_DISTANCE: 196.85, // inches (5 meters)
+    DEPTH_SCALE_FACTOR: 0.7, // Visual depth scaling for 3D effect
 
     // Colors
     COLORS: {
@@ -56,19 +69,36 @@ const GameState = {
 };
 
 class Ball {
-    constructor() {
-        this.radius = (CONFIG.LOGICAL_WIDTH / 1080) * 15;
+    constructor(game) {
+        this.game = game;
+        this.baseRadius = 15;  // Base radius, will be scaled
         this.reset();
         console.log("Ball created");
     }
 
     reset() {
-        this.x = CONFIG.LOGICAL_WIDTH / 2;
-        this.y = CONFIG.LOGICAL_HEIGHT * (1 - CONFIG.LAWN_HEIGHT_PERCENT / 2);
+        this.x = this.game.LOGICAL_WIDTH / 2;
+        this.y = this.game.LOGICAL_HEIGHT * (1 - CONFIG.LAWN_HEIGHT_PERCENT / 2);
         this.vx = 0;
         this.vy = 0;
         this.landed = false;
         this.firstCollision = null;
+    }
+    
+    getPerspectiveFactor() {
+        // Ball appears smaller when higher on screen (farther away in 3D space)
+        // At lawn level (bottom): factor = 1.0 (normal size)
+        // At bucket level (top): factor = CONFIG.DEPTH_SCALE_FACTOR (smaller)
+        const lawnY = this.game.LOGICAL_HEIGHT * (1 - CONFIG.LAWN_HEIGHT_PERCENT);
+        const bucketY = this.game.LOGICAL_HEIGHT * 0.15; // Approximate bucket position
+        
+        const relativePosition = Math.max(0, Math.min(1, (lawnY - this.y) / (lawnY - bucketY)));
+        return 1.0 - relativePosition * (1.0 - CONFIG.DEPTH_SCALE_FACTOR);
+    }
+    
+    // Get effective radius for collision detection (accounts for perspective)
+    getEffectiveRadius(scale) {
+        return this.baseRadius * scale * this.getPerspectiveFactor();
     }
 
     update(deltaTime, wind) {
@@ -83,38 +113,57 @@ class Ball {
         this.y += this.vy * deltaTime;
     }
 
-    draw(ctx) {
+    draw(ctx, scale) {
+        // Calculate perspective-based radius - ball appears smaller when "farther" (higher on screen)
+        const perspectiveFactor = this.getPerspectiveFactor();
+        const radius = this.baseRadius * scale * perspectiveFactor;
+        
+        // Add slight shadow for 3D depth effect
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(this.x + 2, this.y + 2, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        // Draw main ball with perspective scaling
         ctx.fillStyle = CONFIG.COLORS.BALL_GOLD;
         ctx.strokeStyle = CONFIG.COLORS.BALL_OUTLINE;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 * scale * perspectiveFactor;
 
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
     }
 }
 
 class Bucket {
-    constructor(assetManager) {
+    constructor(assetManager, game) {
         this.assetManager = assetManager;
-        this.width = 170; // Logical width from spec
-        this.height = 160; // Logical height based on typical asset proportions
+        this.game = game;
+        this.baseWidth = 170; // Base width from spec
+        this.baseHeight = 160; // Base height based on typical asset proportions
         this.reset();
         console.log("Bucket created");
     }
 
     reset() {
         // Set anchor point to be the bottom-center of the bucket
-        this.x = CONFIG.LOGICAL_WIDTH / 2;
+        this.x = this.game.LOGICAL_WIDTH / 2;
 
         const yRange = CONFIG.BUCKET_Y_PERCENT_RANGE;
         const yPercent = yRange[0] + Math.random() * (yRange[1] - yRange[0]);
         // this.y is the BOTTOM of the bucket
-        this.y = CONFIG.LOGICAL_HEIGHT * yPercent;
+        this.y = this.game.LOGICAL_HEIGHT * yPercent;
 
-        const jitter = (Math.random() - 0.5) * 2 * CONFIG.BUCKET_X_JITTER_PERCENT * CONFIG.LOGICAL_WIDTH;
+        const jitter = (Math.random() - 0.5) * 2 * CONFIG.BUCKET_X_JITTER_PERCENT * this.game.LOGICAL_WIDTH;
         this.x += jitter;
+        
+        // Apply 3rd person perspective scaling - bucket appears smaller due to distance
+        this.width = this.baseWidth * CONFIG.DEPTH_SCALE_FACTOR;
+        this.height = this.baseHeight * CONFIG.DEPTH_SCALE_FACTOR;
 
         this.tilt = 0; // degrees
         this.tiltVelocity = 0;
@@ -205,6 +254,7 @@ class Bucket {
     draw(ctx) {
         let bucketImage;
         const dpr = window.devicePixelRatio || 1;
+        const scale = this.game.scale;
 
         // Choose the correct sprite based on the bucket's state
         if (this.isToppled) {
@@ -225,12 +275,22 @@ class Bucket {
         }
 
         if (bucketImage) {
-            const drawX = this.x - this.width / 2;
-            const drawY = this.y - this.height;
-            ctx.drawImage(bucketImage, drawX, drawY, this.width, this.height);
+            // Apply perspective scaling and slight vertical offset for 3D effect
+            const perspectiveWidth = this.width * scale;
+            const perspectiveHeight = this.height * scale;
+            const drawX = this.x - perspectiveWidth / 2;
+            const drawY = this.y - perspectiveHeight;
+            
+            // Slight shadow/depth effect - draw slightly offset darker version first
+            ctx.save();
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(drawX + 3, drawY + 3, perspectiveWidth, perspectiveHeight);
+            ctx.restore();
+            
+            ctx.drawImage(bucketImage, drawX, drawY, perspectiveWidth, perspectiveHeight);
         } else {
-            // Fallback drawing if any image fails to load
-            // Still apply rotation for the fallback to show tilt/topple
+            // Enhanced fallback with 3D perspective
             ctx.save();
             ctx.translate(this.x, this.y);
             ctx.rotate(this.tilt * Math.PI / 180);
@@ -254,9 +314,10 @@ class Bucket {
 }
 
 class Lawn {
-    constructor() {
-        this.height = CONFIG.LOGICAL_HEIGHT * CONFIG.LAWN_HEIGHT_PERCENT;
-        this.y = CONFIG.LOGICAL_HEIGHT - this.height;
+    constructor(game) {
+        this.game = game;
+        this.height = this.game.LOGICAL_HEIGHT * CONFIG.LAWN_HEIGHT_PERCENT;
+        this.y = this.game.LOGICAL_HEIGHT - this.height;
         console.log("Lawn created");
     }
 
@@ -265,22 +326,23 @@ class Lawn {
     draw(ctx, gameState) {
         // Base grass color
         ctx.fillStyle = CONFIG.COLORS.GRASS_BASE;
-        ctx.fillRect(0, this.y, CONFIG.LOGICAL_WIDTH, this.height);
+        ctx.fillRect(0, this.y, this.game.LOGICAL_WIDTH, this.height);
 
         // Add some "tufts" for texture
         ctx.fillStyle = CONFIG.COLORS.GRASS_TUFTS;
-        for (let i = 0; i < 100; i++) {
-            const x = Math.random() * CONFIG.LOGICAL_WIDTH;
+        const numTufts = Math.floor(100 * this.game.scale); // Scale tuft density
+        for (let i = 0; i < numTufts; i++) {
+            const x = Math.random() * this.game.LOGICAL_WIDTH;
             const y = this.y + Math.random() * this.height;
             ctx.beginPath();
-            ctx.arc(x, y, Math.random() * 5 + 2, 0, Math.PI);
+            ctx.arc(x, y, (Math.random() * 5 + 2) * this.game.scale, 0, Math.PI);
             ctx.fill();
         }
 
         // Draw armed overlay if needed
         if (gameState === GameState.ARMED) {
             ctx.fillStyle = CONFIG.COLORS.ARMED_LAWN_OVERLAY;
-            ctx.fillRect(0, this.y, CONFIG.LOGICAL_WIDTH, this.height);
+            ctx.fillRect(0, this.y, this.game.LOGICAL_WIDTH, this.height);
         }
     }
 }
@@ -403,9 +465,11 @@ class BucketBallGame {
         this.assetManager = assetManager;
 
         this.state = GameState.READY;
-        this.lawn = new Lawn();
-        this.bucket = new Bucket(this.assetManager);
-        this.ball = new Ball();
+        this.LOGICAL_WIDTH = 1080;  // Will be updated in resize
+        this.LOGICAL_HEIGHT = 1920; // Will be updated in resize
+        this.lawn = new Lawn(this);
+        this.bucket = new Bucket(this.assetManager, this);
+        this.ball = new Ball(this);
 
         this.score = 0;
         this.throwCount = 1;
@@ -420,6 +484,7 @@ class BucketBallGame {
         };
         this.disarmTimer = null;
         this.settleTimer = 0;
+        this.missResetTimer = null; // Timer for auto-reset after miss
 
         this.resetGame();
 
@@ -432,35 +497,49 @@ class BucketBallGame {
     }
 
     /**
-     * Handles window resizing to keep the game looking correct.
-     * Scales the canvas based on DPR and maintains a logical aspect ratio.
+     * Handles window resizing to use full screen real estate dynamically.
+     * Adapts to any screen size while maintaining playable proportions.
      */
     resize() {
         this.dpr = window.devicePixelRatio || 1;
 
-        // The actual size of the canvas element on the page
+        // Use full screen dimensions
         const displayWidth = window.innerWidth;
         const displayHeight = window.innerHeight;
+        const aspectRatio = displayWidth / displayHeight;
 
-        // Set the canvas backing store size to match the display size scaled by DPR
+        // Set canvas to full screen
         this.canvas.width = displayWidth * this.dpr;
         this.canvas.height = displayHeight * this.dpr;
+        this.canvas.style.width = `${displayWidth}px`;
+        this.canvas.style.height = `${displayHeight}px`;
 
-        // Calculate the scale factor to fit the logical game size into the display area
+        // Calculate logical game dimensions based on screen
+        if (aspectRatio < CONFIG.MIN_ASPECT_RATIO) {
+            // Very tall screen - use minimum width
+            this.LOGICAL_WIDTH = displayHeight * CONFIG.MIN_ASPECT_RATIO;
+            this.LOGICAL_HEIGHT = displayHeight;
+        } else if (aspectRatio > CONFIG.MAX_ASPECT_RATIO) {
+            // Very wide screen - use maximum height
+            this.LOGICAL_WIDTH = displayWidth;
+            this.LOGICAL_HEIGHT = displayWidth / CONFIG.MAX_ASPECT_RATIO;
+        } else {
+            // Normal screen - use actual dimensions
+            this.LOGICAL_WIDTH = displayWidth;
+            this.LOGICAL_HEIGHT = displayHeight;
+        }
+
+        // Calculate scale relative to base design
         this.scale = Math.min(
-            displayWidth / CONFIG.LOGICAL_WIDTH,
-            displayHeight / CONFIG.LOGICAL_HEIGHT
+            this.LOGICAL_WIDTH / CONFIG.BASE_WIDTH,
+            this.LOGICAL_HEIGHT / CONFIG.BASE_HEIGHT
         );
 
-        // The rendered size of the game content on the canvas
-        this.renderWidth = CONFIG.LOGICAL_WIDTH * this.scale;
-        this.renderHeight = CONFIG.LOGICAL_HEIGHT * this.scale;
-
-        // Center the canvas element itself if the container is larger
-        this.canvas.style.width = `${this.renderWidth}px`;
-        this.canvas.style.height = `${this.renderHeight}px`;
-
-        console.log(`Resized. DPR: ${this.dpr}, Scale: ${this.scale.toFixed(3)}`);
+        // Update lawn and bucket positioning based on new dimensions
+        this.lawn.height = this.LOGICAL_HEIGHT * CONFIG.LAWN_HEIGHT_PERCENT;
+        this.lawn.y = this.LOGICAL_HEIGHT - this.lawn.height;
+        
+        console.log(`Resized to full screen: ${displayWidth}x${displayHeight}, Logical: ${this.LOGICAL_WIDTH.toFixed(0)}x${this.LOGICAL_HEIGHT.toFixed(0)}, Scale: ${this.scale.toFixed(3)}`);
         this.draw(); // Redraw immediately on resize
     }
 
@@ -508,13 +587,31 @@ class BucketBallGame {
 
         if (!this.canArm) return;
 
-        if ((this.state === GameState.READY || this.state === GameState.ARMED) && pos.y > this.lawn.y) {
-            this.input.isPointerDown = true;
-            this.input.startPos = pos;
-            this.input.currentPos = pos;
-            this.input.startTime = performance.now();
-            if (this.state === GameState.ARMED) {
-                clearTimeout(this.disarmTimer);
+        // Allow interaction anywhere on screen for more natural feel
+        if (this.state === GameState.READY || this.state === GameState.ARMED) {
+            // Check if clicking near ball for direct interaction
+            const ballDistance = Math.hypot(pos.x - this.ball.x, pos.y - this.ball.y);
+            const interactionRadius = this.ball.getEffectiveRadius(this.scale) * 3; // Generous interaction area
+            
+            // Allow ball drag OR lawn area interaction
+            if (ballDistance <= interactionRadius || pos.y > this.lawn.y) {
+                this.input.isPointerDown = true;
+                this.input.startPos = pos;
+                this.input.currentPos = pos;
+                this.input.startTime = performance.now();
+                this.input.isDragMode = ballDistance <= interactionRadius; // Track if dragging ball directly
+                
+                // Auto-arm when starting interaction
+                if (this.state === GameState.READY) {
+                    this.state = GameState.ARMED;
+                    if (navigator.vibrate) {
+                        navigator.vibrate(50);
+                    }
+                }
+                
+                if (this.disarmTimer) {
+                    clearTimeout(this.disarmTimer);
+                }
             }
         }
     }
@@ -531,32 +628,35 @@ class BucketBallGame {
 
         const swipeLength = Math.hypot(endPos.x - this.input.startPos.x, endPos.y - this.input.startPos.y);
         const holdDuration = performance.now() - this.input.startTime;
+        const dx = endPos.x - this.input.startPos.x;
+        const dy = endPos.y - this.input.startPos.y;
 
-        if (this.state === GameState.READY) {
-            if (swipeLength < 20) { // It's a tap
-                this.state = GameState.ARMED;
-                if (navigator.vibrate) {
-                    navigator.vibrate(50); // Optional haptic tick
-                }
+        if (this.state === GameState.ARMED) {
+            // More natural throwing - any significant drag launches the ball
+            if (swipeLength >= 30) {  // Lower threshold for more responsive feel
+                // Scale velocity based on drag distance and screen size
+                const velocityScale = 3.0 + (this.scale * 2.0); // Adjust for screen size
+                this.ball.vx = -dx * velocityScale;
+                this.ball.vy = -dy * velocityScale;
+                this.state = GameState.LAUNCHED;
+                this.ball.landed = false;
+                console.log(`Ball launched: vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
+            } else if (swipeLength < 10 && !this.input.isDragMode) {
+                // Small tap when not dragging ball - just stay armed
                 this.disarmTimer = setTimeout(() => {
                     if (this.state === GameState.ARMED) {
                         this.state = GameState.READY;
                     }
                 }, CONFIG.AUTO_DISARM_DELAY);
-            }
-        } else if (this.state === GameState.ARMED) {
-            const dy = endPos.y - this.input.startPos.y;
-            if (swipeLength >= CONFIG.SWIPE_THRESHOLD && holdDuration >= CONFIG.ARMING_HOLD_DURATION && dy < 0) {
-                const dx = endPos.x - this.input.startPos.x;
-                this.ball.vx = -dx * 4.5; // Velocity scaling factor
-                this.ball.vy = -dy * 4.5;
-                this.state = GameState.LAUNCHED;
-                this.ball.landed = false;
             } else {
+                // Insufficient drag - disarm
                 this.state = GameState.READY;
             }
         }
+        
+        // Clear interaction state
         this.input.startPos = null;
+        this.input.isDragMode = false;
     }
 
     start() {
@@ -590,6 +690,13 @@ class BucketBallGame {
         this.canArm = true;
         this.isBannerVisible = this.uiManager ? !this.uiManager.isBannerPermanentlyDismissed : false;
         this.settleTimer = 0;
+        
+        // Clear any pending timers
+        if (this.missResetTimer) {
+            clearTimeout(this.missResetTimer);
+            this.missResetTimer = null;
+        }
+        
         console.log(`Throw ${this.throwCount}/${CONFIG.THROW_COUNT}. Wind: ${this.wind.toFixed(2)} m/s`);
     }
 
@@ -609,6 +716,24 @@ class BucketBallGame {
             } else {
                 this.settleTimer = 0;
             }
+            
+            // Auto-reset if ball is rolling indefinitely at bottom of screen
+            if (this.ball.y >= this.LOGICAL_HEIGHT - 50 && ballSpeed > CONFIG.SETTLE_VELOCITY_THRESHOLD && ballSpeed < 100) {
+                if (!this.missResetTimer) {
+                    this.missResetTimer = setTimeout(() => {
+                        if (this.state === GameState.LAUNCHED) {
+                            this.state = GameState.RESOLVING;
+                            this.ball.landed = true;
+                            this.resolveThrow();
+                        }
+                    }, CONFIG.MISS_AUTO_RESET_DELAY);
+                }
+            } else {
+                if (this.missResetTimer) {
+                    clearTimeout(this.missResetTimer);
+                    this.missResetTimer = null;
+                }
+            }
         }
         this.bucket.update(deltaTime);
         this.lawn.update(deltaTime);
@@ -627,9 +752,9 @@ class BucketBallGame {
         }
 
         // 2. Side wall collisions
-        if ((ball.x - ball.radius <= 0 && ball.vx < 0) || (ball.x + ball.radius >= CONFIG.LOGICAL_WIDTH && ball.vx > 0)) {
+        if ((ball.x - ball.radius * this.scale <= 0 && ball.vx < 0) || (ball.x + ball.radius * this.scale >= this.LOGICAL_WIDTH && ball.vx > 0)) {
             ball.vx *= -0.8; // Bouncy walls
-            ball.x = Math.max(ball.radius, Math.min(CONFIG.LOGICAL_WIDTH - ball.radius, ball.x));
+            ball.x = Math.max(ball.radius * this.scale, Math.min(this.LOGICAL_WIDTH - ball.radius * this.scale, ball.x));
         }
 
         // 3. Bucket collision
@@ -639,9 +764,9 @@ class BucketBallGame {
     draw() {
         // --- Clear and setup canvas for new frame ---
         this.ctx.save();
-        this.ctx.scale(this.dpr * this.scale, this.dpr * this.scale);
+        this.ctx.scale(this.dpr, this.dpr);  // Only scale by DPR, use full screen
         this.ctx.fillStyle = CONFIG.COLORS.BACKGROUND;
-        this.ctx.fillRect(0, 0, CONFIG.LOGICAL_WIDTH, CONFIG.LOGICAL_HEIGHT);
+        this.ctx.fillRect(0, 0, this.LOGICAL_WIDTH, this.LOGICAL_HEIGHT);
 
         // --- Draw game objects ---
         this.lawn.draw(this.ctx, this.state);
@@ -649,7 +774,7 @@ class BucketBallGame {
 
         // Draw ball only if it's not landed inside the bucket (visual tweak)
         if(this.state !== GameState.RESOLVING) {
-            this.ball.draw(this.ctx);
+            this.ball.draw(this.ctx, this.scale);
         }
 
         // --- Draw UI elements ---
@@ -716,21 +841,21 @@ class BucketBallGame {
 
     drawHUD() {
         this.ctx.fillStyle = '#111111';
-        this.ctx.font = 'bold 48px sans-serif';
+        this.ctx.font = `bold ${48 * this.scale}px sans-serif`;
 
         // Score
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(`Score: ${this.score} / 10`, 40, 80);
+        this.ctx.fillText(`Score: ${this.score} / 10`, 40 * this.scale, 80 * this.scale);
 
         // Throw count
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(`Throw ${this.throwCount} of ${CONFIG.THROW_COUNT}`, CONFIG.LOGICAL_WIDTH / 2, 80);
+        this.ctx.fillText(`Throw ${this.throwCount} of ${CONFIG.THROW_COUNT}`, this.LOGICAL_WIDTH / 2, 80 * this.scale);
 
         // Wind
         this.ctx.textAlign = 'right';
         const windSpeed = Math.abs(this.wind).toFixed(1);
         const windArrow = this.wind > 0 ? '→' : (this.wind < 0 ? '←' : '·');
-        this.ctx.fillText(`${windArrow} ${windSpeed}m/s`, CONFIG.LOGICAL_WIDTH - 40, 80);
+        this.ctx.fillText(`${windArrow} ${windSpeed}m/s`, this.LOGICAL_WIDTH - 40 * this.scale, 80 * this.scale);
     }
 
     draw5mLine() {
@@ -753,20 +878,43 @@ class BucketBallGame {
 
     drawArmedUI() {
         this.ctx.fillStyle = CONFIG.COLORS.WHITE;
-        this.ctx.font = "bold 60px sans-serif";
+        this.ctx.font = `bold ${60 * this.scale}px sans-serif`;
         this.ctx.textAlign = "center";
-        const yPos = CONFIG.LOGICAL_HEIGHT - (this.lawn.height / 2) + 20;
-        this.ctx.fillText("ARMED – Flick to throw", CONFIG.LOGICAL_WIDTH / 2, yPos);
+        const yPos = this.LOGICAL_HEIGHT - (this.lawn.height / 2) + 20 * this.scale;
+        this.ctx.fillText("ARMED – Drag to throw", this.LOGICAL_WIDTH / 2, yPos);
     }
 
     drawAimingLine() {
-        this.ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
-        this.ctx.lineWidth = 10;
+        this.ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+        this.ctx.lineWidth = 8 * this.scale;
         this.ctx.lineCap = "round";
+        
+        // Draw from ball position to current drag position for more intuitive feedback
+        const startX = this.input.isDragMode ? this.ball.x : this.input.startPos.x;
+        const startY = this.input.isDragMode ? this.ball.y : this.input.startPos.y;
+        
         this.ctx.beginPath();
-        this.ctx.moveTo(this.input.startPos.x, this.input.startPos.y);
+        this.ctx.moveTo(startX, startY);
         this.ctx.lineTo(this.input.currentPos.x, this.input.currentPos.y);
         this.ctx.stroke();
+        
+        // Add trajectory preview dots
+        const dx = this.input.currentPos.x - startX;
+        const dy = this.input.currentPos.y - startY;
+        const velocityScale = 3.0 + (this.scale * 2.0);
+        const previewVx = -dx * velocityScale * 0.3; // Scaled down for preview
+        const previewVy = -dy * velocityScale * 0.3;
+        
+        this.ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        for (let i = 1; i <= 5; i++) {
+            const t = i * 0.1; // Time steps
+            const previewX = this.ball.x + previewVx * t;
+            const previewY = this.ball.y + previewVy * t + 0.5 * CONFIG.GRAVITY * t * t * 0.3;
+            
+            this.ctx.beginPath();
+            this.ctx.arc(previewX, previewY, 4 * this.scale, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
     }
 }
 
