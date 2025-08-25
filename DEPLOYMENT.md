@@ -1,7 +1,11 @@
 # 🚀 BucketBall 2028 - Production Deployment Guide
 
 ## Live Production URL
-**🎮 Play BucketBall 2028:** https://bucketball-2028-1gjf7oje6-mintin.vercel.app
+**🎮 Play BucketBall 2028:** https://bucketball-2028-nj2sumnu6-mintin.vercel.app
+
+### Recent Update (Visual Fixes)
+- **Latest Deployment**: https://bucketball-2028-nj2sumnu6-mintin.vercel.app
+- **Previous URL**: https://bucketball-2028-1gjf7oje6-mintin.vercel.app (may redirect)
 
 ### Mobile Testing URLs
 - **Direct Mobile Access**: Same URL works across all devices
