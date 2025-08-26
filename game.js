@@ -51,7 +51,7 @@ const CONFIG = {
     },
 
     // Layout
-    LAWN_HEIGHT_PERCENT: 0.25, // 25% of screen height
+    LAWN_HEIGHT_PERCENT: 0.20, // 20% of screen height for player interaction area
     BUCKET_Y_PERCENT_RANGE: [0.1, 0.2], // 10-20% from top
     BUCKET_X_JITTER_PERCENT: 0.1, // ±10% of width
 
@@ -71,14 +71,15 @@ const GameState = {
 class Ball {
     constructor(game) {
         this.game = game;
-        this.baseRadius = 15;  // Base radius, will be scaled
+        this.baseRadius = 20;  // Increased for better visibility (was 15)
         this.reset();
         console.log("Ball created");
     }
 
     reset() {
         this.x = this.game.LOGICAL_WIDTH / 2;
-        this.y = this.game.LOGICAL_HEIGHT * (1 - CONFIG.LAWN_HEIGHT_PERCENT / 2);
+        // Position ball in center of bottom 20% of screen
+        this.y = this.game.LOGICAL_HEIGHT * 0.9; // 90% down = center of bottom 20%
         this.vx = 0;
         this.vy = 0;
         this.landed = false;
@@ -117,25 +118,25 @@ class Ball {
     draw(ctx, scale) {
         // Calculate perspective-based radius - ball appears smaller when "farther" (higher on screen)
         const perspectiveFactor = this.getPerspectiveFactor();
-        const radius = Math.max(8, this.baseRadius * scale * perspectiveFactor); // Minimum 8px radius for visibility
+        const radius = Math.max(12, this.baseRadius * scale * perspectiveFactor); // Increased minimum for visibility
         
-        // Add slight shadow for 3D depth effect
+        // Add slight shadow for depth
         ctx.save();
-        ctx.globalAlpha = 0.4;
+        ctx.globalAlpha = 0.3;
         ctx.fillStyle = '#000000';
         ctx.beginPath();
-        ctx.arc(this.x + 3, this.y + 3, radius, 0, Math.PI * 2);
+        ctx.arc(this.x + 2, this.y + 4, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
         
-        // Draw main ball with enhanced gold gradient
+        // Draw main ball with bright yellow/gold gradient for visibility
         const gradient = ctx.createRadialGradient(
             this.x - radius * 0.3, this.y - radius * 0.3, 0,
             this.x, this.y, radius
         );
-        gradient.addColorStop(0, '#FFEF94');  // Light gold highlight
-        gradient.addColorStop(0.4, CONFIG.COLORS.BALL_GOLD); // Main gold
-        gradient.addColorStop(1, '#B8860B');   // Darker gold edge
+        gradient.addColorStop(0, '#FFFF99');  // Bright yellow highlight
+        gradient.addColorStop(0.4, '#FFD700'); // Gold
+        gradient.addColorStop(1, '#FFA500');   // Orange-gold edge
         
         ctx.fillStyle = gradient;
         ctx.strokeStyle = CONFIG.COLORS.BALL_OUTLINE;
@@ -161,8 +162,8 @@ class Bucket {
     constructor(assetManager, game) {
         this.assetManager = assetManager;
         this.game = game;
-        this.baseWidth = 170; // Base width from spec
-        this.baseHeight = 160; // Base height based on typical asset proportions
+        this.baseWidth = 204; // Base width increased by 20% (was 170)
+        this.baseHeight = 192; // Base height increased by 20% (was 160)
         this.reset();
         console.log("Bucket created");
     }
@@ -299,12 +300,7 @@ class Bucket {
             const drawX = this.x - perspectiveWidth / 2;
             const drawY = this.y - perspectiveHeight;
             
-            // Slight shadow/depth effect - draw slightly offset darker version first
-            ctx.save();
-            ctx.globalAlpha = 0.3;
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(drawX + 3, drawY + 3, perspectiveWidth, perspectiveHeight);
-            ctx.restore();
+            // No shadow - removed per requirement
             
             ctx.drawImage(bucketImage, drawX, drawY, perspectiveWidth, perspectiveHeight);
         } else {
@@ -378,22 +374,8 @@ class Lawn {
     update(deltaTime) { /* State changes will go here */ }
 
     draw(ctx, gameState) {
-        // Base grass color
-        ctx.fillStyle = CONFIG.COLORS.GRASS_BASE;
-        ctx.fillRect(0, this.y, this.game.LOGICAL_WIDTH, this.height);
-
-        // Add some "tufts" for texture
-        ctx.fillStyle = CONFIG.COLORS.GRASS_TUFTS;
-        const numTufts = Math.floor(100 * this.game.scale); // Scale tuft density
-        for (let i = 0; i < numTufts; i++) {
-            const x = Math.random() * this.game.LOGICAL_WIDTH;
-            const y = this.y + Math.random() * this.height;
-            ctx.beginPath();
-            ctx.arc(x, y, (Math.random() * 5 + 2) * this.game.scale, 0, Math.PI);
-            ctx.fill();
-        }
-
-        // Draw armed overlay if needed
+        // Don't draw grass - background image handles that
+        // Only draw the armed overlay when needed
         if (gameState === GameState.ARMED) {
             ctx.fillStyle = CONFIG.COLORS.ARMED_LAWN_OVERLAY;
             ctx.fillRect(0, this.y, this.game.LOGICAL_WIDTH, this.height);
@@ -645,10 +627,11 @@ class BucketBallGame {
         if (this.state === GameState.READY || this.state === GameState.ARMED) {
             // Check if clicking near ball for direct interaction
             const ballDistance = Math.hypot(pos.x - this.ball.x, pos.y - this.ball.y);
-            const interactionRadius = this.ball.getEffectiveRadius(this.scale) * 3; // Generous interaction area
+            const interactionRadius = this.ball.getEffectiveRadius(this.scale) * 4; // More generous interaction area
             
-            // Allow ball drag OR lawn area interaction
-            if (ballDistance <= interactionRadius || pos.y > this.lawn.y) {
+            // Allow interaction in bottom 20% of screen OR near ball
+            const bottomAreaY = this.LOGICAL_HEIGHT * 0.8;
+            if (ballDistance <= interactionRadius || pos.y > bottomAreaY) {
                 this.input.isPointerDown = true;
                 this.input.startPos = pos;
                 this.input.currentPos = pos;
@@ -819,8 +802,8 @@ class BucketBallGame {
         // --- Clear and setup canvas for new frame ---
         this.ctx.save();
         this.ctx.scale(this.dpr, this.dpr);  // Only scale by DPR, use full screen
-        this.ctx.fillStyle = CONFIG.COLORS.BACKGROUND;
-        this.ctx.fillRect(0, 0, this.LOGICAL_WIDTH, this.LOGICAL_HEIGHT);
+        // Clear canvas without filling with background color to show grass background
+        this.ctx.clearRect(0, 0, this.LOGICAL_WIDTH, this.LOGICAL_HEIGHT);
 
         // --- Draw game objects ---
         this.lawn.draw(this.ctx, this.state);
@@ -911,19 +894,21 @@ class BucketBallGame {
     }
 
     draw5mLine() {
+        // Draw chalk line at bottom 20% of screen
+        const chalkLineY = this.LOGICAL_HEIGHT * 0.8; // 80% down = top of bottom 20%
+        
         const isPulsing = this.state === GameState.ARMED;
         const pulse = isPulsing ? (Math.sin(performance.now() / 200) + 1) / 2 : 0;
 
-        // Default is grey, turns white and pulses when armed
-        const baseColor = isPulsing ? '255, 255, 255' : '200, 200, 200';
-        const baseAlpha = isPulsing ? 0.7 + pulse * 0.3 : 0.5;
+        // Chalk white color
+        const baseAlpha = isPulsing ? 0.8 + pulse * 0.2 : 0.6;
 
-        this.ctx.strokeStyle = `rgba(${baseColor}, ${baseAlpha})`;
-        this.ctx.lineWidth = isPulsing ? 5 + pulse * 5 : 5;
-        this.ctx.setLineDash([20, 15]);
+        this.ctx.strokeStyle = `rgba(255, 255, 255, ${baseAlpha})`;
+        this.ctx.lineWidth = isPulsing ? 3 + pulse * 2 : 3;
+        this.ctx.setLineDash([20, 10]); // Dashed pattern for chalk look
         this.ctx.beginPath();
-        this.ctx.moveTo(0, this.lawn.y);
-        this.ctx.lineTo(CONFIG.LOGICAL_WIDTH, this.lawn.y);
+        this.ctx.moveTo(0, chalkLineY);
+        this.ctx.lineTo(this.LOGICAL_WIDTH, chalkLineY);
         this.ctx.stroke();
         this.ctx.setLineDash([]);
     }
