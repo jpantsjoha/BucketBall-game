@@ -378,78 +378,22 @@ class Lawn {
     }
 }
 
-class UIManager {
-    constructor(game) {
-        this.game = game;
-        this.helpBanner = document.getElementById('help-banner');
-        this.helpPill = document.getElementById('help-pill');
-        this.gotItBtn = document.getElementById('got-it-btn');
-        this.remindLaterBtn = document.getElementById('remind-later-btn');
-        this.minimizeChevron = document.getElementById('minimize-chevron');
-        this.toastContainer = document.getElementById('toast-container');
+// Simple toast function - no UI manager needed
+function showToast(message, duration = 3000) {
+    const toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) return;
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
 
-        this.isBannerPermanentlyDismissed = localStorage.getItem('bucketball_banner_dismissed') === 'true';
+    setTimeout(() => toast.classList.add('visible'), 10);
 
-        this.setupListeners();
-
-        if (!this.isBannerPermanentlyDismissed) {
-            this.showBanner();
-        } else {
-            this.showPill();
-        }
-    }
-
-    setupListeners() {
-        this.gotItBtn.addEventListener('click', (e) => { e.stopPropagation(); this.dismissBanner(true); });
-        this.remindLaterBtn.addEventListener('click', (e) => { e.stopPropagation(); this.dismissBanner(false); });
-        this.minimizeChevron.addEventListener('click', (e) => { e.stopPropagation(); this.minimizeBanner(); });
-        this.helpPill.addEventListener('click', (e) => { e.stopPropagation(); this.showBanner(); });
-    }
-
-    showBanner() {
-        this.helpBanner.classList.add('visible');
-        this.helpPill.classList.remove('visible');
-        this.helpPill.classList.add('hidden');
-        this.game.isBannerVisible = true;
-        this.minimizeChevron.innerHTML = '⌄';
-    }
-
-    dismissBanner(isPermanent) {
-        this.helpBanner.classList.remove('visible');
-        this.showPill();
-        this.minimizeChevron.innerHTML = '⌃';
-        if (isPermanent) {
-            localStorage.setItem('bucketball_banner_dismissed', 'true');
-            this.isBannerPermanentlyDismissed = true;
-        }
-        this.game.onBannerDismissed();
-    }
-
-    minimizeBanner() {
-        this.helpBanner.classList.remove('visible');
-        this.showPill();
-        this.minimizeChevron.innerHTML = '⌃';
-        this.game.onBannerDismissed();
-    }
-
-    showPill() {
-        this.helpPill.classList.remove('hidden');
-        this.helpPill.classList.add('visible');
-    }
-
-    showToast(message, duration = 3000) {
-        const toast = document.createElement('div');
-        toast.className = 'toast';
-        toast.textContent = message;
-        this.toastContainer.appendChild(toast);
-
-        setTimeout(() => toast.classList.add('visible'), 10);
-
-        setTimeout(() => {
-            toast.classList.remove('visible');
-            toast.addEventListener('transitionend', () => toast.remove());
-        }, duration);
-    }
+    setTimeout(() => {
+        toast.classList.remove('visible');
+        toast.addEventListener('transitionend', () => toast.remove());
+    }, duration);
 }
 
 
@@ -504,7 +448,6 @@ class BucketBallGame {
 
         this.score = 0;
         this.throwCount = 1;
-        this.isBannerVisible = false;
         this.canArm = true;
 
         this.input = {
@@ -518,8 +461,6 @@ class BucketBallGame {
         this.missResetTimer = null; // Timer for auto-reset after miss
 
         this.resetGame();
-
-        this.uiManager = new UIManager(this);
 
         console.log('Game initialized. State:', this.state);
         this.setupInputListeners();
@@ -602,20 +543,8 @@ class BucketBallGame {
         };
     }
 
-    onBannerDismissed() {
-        this.isBannerVisible = false;
-        this.canArm = false;
-        setTimeout(() => {
-            this.canArm = true;
-        }, CONFIG.DISMISS_TO_THROW_DELAY);
-    }
 
     handlePointerDown(pos) {
-        if (this.isBannerVisible && pos.y > this.lawn.y) {
-            this.uiManager.minimizeBanner();
-            return;
-        }
-
         if (!this.canArm) return;
 
         // Allow interaction anywhere on screen for more natural feel
@@ -720,7 +649,6 @@ class BucketBallGame {
         this.wind = windRange[0] + Math.random() * (windRange[1] - windRange[0]);
         this.state = GameState.READY;
         this.canArm = true;
-        this.isBannerVisible = this.uiManager ? !this.uiManager.isBannerPermanentlyDismissed : false;
         this.settleTimer = 0;
         
         // Clear any pending timers
@@ -825,7 +753,7 @@ class BucketBallGame {
         const bucket = this.bucket;
 
         if (bucket.isToppled) {
-            this.uiManager.showToast("Bucket overturned!");
+            showToast("Bucket overturned!");
         } else {
             const bucketBounds = bucket.getBounds();
             const isInside = ball.x > bucketBounds.rimLeftX &&
@@ -836,15 +764,15 @@ class BucketBallGame {
             if (isInside) {
                 if (ball.firstCollision === 'lawn') {
                     this.score += 2;
-                    this.uiManager.showToast("TRICK SHOT! +2");
+                    showToast("TRICK SHOT! +2");
                 } else {
                     this.score += 1;
-                    this.uiManager.showToast("In the bucket! +1");
+                    showToast("In the bucket! +1");
                 }
             } else if (ball.firstCollision === 'bucket') {
-                this.uiManager.showToast("Bounced out!");
+                showToast("Bounced out!");
             } else {
-                this.uiManager.showToast("Missed!");
+                showToast("Missed!");
             }
         }
 
@@ -865,7 +793,7 @@ class BucketBallGame {
     }
 
     endGame() {
-        this.uiManager.showToast(`Final Score: ${this.score} / 10`, 5000);
+        showToast(`Final Score: ${this.score} / 10`, 5000);
         setTimeout(() => this.resetGame(), 5000);
     }
 

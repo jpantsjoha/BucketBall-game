@@ -26,88 +26,18 @@ html, body {
     touch-action: none; /* Prevents default touch actions like scrolling/zooming */
 }
 
-/* UI Elements */
-#help-banner, #help-pill, #toast-container {
+/* Toast Container Only */
+#toast-container {
     position: absolute;
     left: 50%;
+    top: 25%;
     transform: translateX(-50%);
     width: 100%;
-    max-width: 500px; /* Max width for wider screens */
+    max-width: 500px;
     box-sizing: border-box;
     font-family: sans-serif;
     color: white;
     z-index: 10;
-}
-
-#help-banner {
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.85);
-    padding: 20px;
-    padding-right: 50px; /* Space for chevron */
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transform: translateY(110%);
-    transition: transform 0.3s ease-in-out;
-}
-#help-banner.visible {
-    transform: translateY(0);
-}
-.banner-content p {
-    margin: 0 0 15px 0;
-    line-height: 1.4;
-}
-.banner-buttons button {
-    padding: 10px 15px;
-    border: none;
-    border-radius: 5px;
-    margin-right: 10px;
-    cursor: pointer;
-    font-size: 16px;
-}
-#got-it-btn {
-    background-color: #3498DB;
-    color: white;
-}
-#remind-later-btn {
-    background-color: #555;
-    color: white;
-}
-#minimize-chevron {
-    position: absolute;
-    top: 50%;
-    right: 15px;
-    transform: translateY(-50%);
-    font-size: 30px;
-    cursor: pointer;
-    color: #999;
-}
-
-#help-pill {
-    left: 20px;
-    bottom: 20px;
-    transform: none;
-    width: auto;
-    background-color: #3498DB;
-    padding: 8px 12px;
-    border-radius: 20px;
-    font-size: 14px;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.3s, transform 0.3s;
-    pointer-events: none;
-}
-#help-pill.visible {
-    opacity: 1;
-    pointer-events: auto;
-}
-#help-pill.hidden {
-    transform: translateY(20px);
-    opacity: 0;
-}
-
-#toast-container {
-    top: 25%;
     pointer-events: none;
     display: flex;
     flex-direction: column;
