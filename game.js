@@ -71,15 +71,15 @@ const GameState = {
 class Ball {
     constructor(game) {
         this.game = game;
-        this.baseRadius = 20;  // Increased for better visibility (was 15)
+        this.baseRadius = 25;  // Golf ball size - increased for visibility
         this.reset();
         console.log("Ball created");
     }
 
     reset() {
         this.x = this.game.LOGICAL_WIDTH / 2;
-        // Position ball in center of bottom 20% of screen
-        this.y = this.game.LOGICAL_HEIGHT * 0.9; // 90% down = center of bottom 20%
+        // Position ball in visible area - more towards center but still in bottom area
+        this.y = this.game.LOGICAL_HEIGHT * 0.85; // 85% down to ensure visibility
         this.vx = 0;
         this.vy = 0;
         this.landed = false;
@@ -116,45 +116,40 @@ class Ball {
     }
 
     draw(ctx, scale) {
-        // Calculate perspective-based radius - ball appears smaller when "farther" (higher on screen)
-        const perspectiveFactor = this.getPerspectiveFactor();
-        const radius = Math.max(12, this.baseRadius * scale * perspectiveFactor); // Increased minimum for visibility
+        // Always use full size for visibility - no perspective scaling
+        const radius = Math.max(25, this.baseRadius * scale); // Large golf ball size
         
-        // Add slight shadow for depth
+        // Draw shadow first
         ctx.save();
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.4;
         ctx.fillStyle = '#000000';
         ctx.beginPath();
-        ctx.arc(this.x + 2, this.y + 4, radius, 0, Math.PI * 2);
+        ctx.arc(this.x + 4, this.y + 6, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
         
-        // Draw main ball with bright yellow/gold gradient for visibility
-        const gradient = ctx.createRadialGradient(
-            this.x - radius * 0.3, this.y - radius * 0.3, 0,
-            this.x, this.y, radius
-        );
-        gradient.addColorStop(0, '#FFFF99');  // Bright yellow highlight
-        gradient.addColorStop(0.4, '#FFD700'); // Gold
-        gradient.addColorStop(1, '#FFA500');   // Orange-gold edge
-        
-        ctx.fillStyle = gradient;
-        ctx.strokeStyle = CONFIG.COLORS.BALL_OUTLINE;
-        ctx.lineWidth = Math.max(1, 2 * scale * perspectiveFactor);
-
+        // Main ball - BRIGHT YELLOW
+        ctx.save();
+        ctx.fillStyle = '#FFFF00';  // Pure bright yellow
         ctx.beginPath();
         ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
         ctx.fill();
-        ctx.stroke();
         
-        // Add sparkle effect for premium feel
+        // Black outline for contrast
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.restore();
+        
+        // White highlight for 3D effect
         ctx.save();
         ctx.fillStyle = '#FFFFFF';
         ctx.globalAlpha = 0.8;
         ctx.beginPath();
-        ctx.arc(this.x - radius * 0.3, this.y - radius * 0.3, Math.max(1, radius * 0.1), 0, Math.PI * 2);
+        ctx.arc(this.x - radius * 0.25, this.y - radius * 0.25, radius * 0.15, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+        
     }
 }
 
@@ -625,13 +620,13 @@ class BucketBallGame {
 
         // Allow interaction anywhere on screen for more natural feel
         if (this.state === GameState.READY || this.state === GameState.ARMED) {
-            // Check if clicking near ball for direct interaction
+            // Check if clicking within 10px of ball (as requested)
             const ballDistance = Math.hypot(pos.x - this.ball.x, pos.y - this.ball.y);
-            const interactionRadius = this.ball.getEffectiveRadius(this.scale) * 4; // More generous interaction area
+            const clickRadius = 10 / this.scale; // 10px click radius adjusted for scale
             
-            // Allow interaction in bottom 20% of screen OR near ball
+            // Allow interaction within 10px of ball OR in bottom 20% area
             const bottomAreaY = this.LOGICAL_HEIGHT * 0.8;
-            if (ballDistance <= interactionRadius || pos.y > bottomAreaY) {
+            if (ballDistance <= clickRadius || pos.y > bottomAreaY) {
                 this.input.isPointerDown = true;
                 this.input.startPos = pos;
                 this.input.currentPos = pos;
