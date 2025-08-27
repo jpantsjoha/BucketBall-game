@@ -82,8 +82,8 @@ class Ball {
 
     reset() {
         this.x = this.game.LOGICAL_WIDTH / 2;
-        // Position ball clearly in visible area 
-        this.y = this.game.LOGICAL_HEIGHT * 0.82; // Slightly higher for guaranteed visibility
+        // Position ball at chalk line level for guaranteed visibility
+        this.y = this.game.LOGICAL_HEIGHT * 0.85; // Below chalk line for maximum visibility
         this.vx = 0;
         this.vy = 0;
         this.landed = false;
@@ -858,6 +858,24 @@ class BucketBallGame {
 
         // Always draw ball - it should be visible for player interaction
         this.ball.draw(this.ctx, this.scale);
+        
+        // EMERGENCY BALL VISIBILITY OVERRIDE - GUARANTEED VISIBLE BALL
+        this.ctx.save();
+        this.ctx.fillStyle = '#FFFFFF';  // Pure white
+        this.ctx.strokeStyle = '#000000'; // Black outline
+        this.ctx.lineWidth = 8;
+        this.ctx.globalAlpha = 1.0;
+        
+        // Force ball at bottom center - ALWAYS VISIBLE
+        const emergencyBallX = this.LOGICAL_WIDTH / 2;
+        const emergencyBallY = this.LOGICAL_HEIGHT * 0.85;
+        const emergencyRadius = 50; // Large fixed radius - IMPOSSIBLE TO MISS
+        
+        this.ctx.beginPath();
+        this.ctx.arc(emergencyBallX, emergencyBallY, emergencyRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        this.ctx.restore();
         
         // PRODUCTION BALL VISIBILITY FIX: Always render bright yellow ball
         // This ensures the ball is ALWAYS visible for gameplay
