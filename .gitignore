@@ -1,0 +1,12 @@
+.vercel
+
+# Test screenshots and results
+*screenshots/
+*_screenshots/
+journey_screenshots/
+gameplay_screenshots/
+action_screenshots/
+*.json
+*test_results*
+*validation_results*
+*journey_report*
