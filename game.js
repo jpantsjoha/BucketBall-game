@@ -78,8 +78,8 @@ class Ball {
 
     reset() {
         this.x = this.game.LOGICAL_WIDTH / 2;
-        // Position ball in visible area - more towards center but still in bottom area
-        this.y = this.game.LOGICAL_HEIGHT * 0.85; // 85% down to ensure visibility
+        // Position ball clearly in visible area 
+        this.y = this.game.LOGICAL_HEIGHT * 0.82; // Slightly higher for guaranteed visibility
         this.vx = 0;
         this.vy = 0;
         this.landed = false;
@@ -116,8 +116,8 @@ class Ball {
     }
 
     draw(ctx, scale) {
-        // Always use full size for visibility - no perspective scaling
-        const radius = Math.max(25, this.baseRadius * scale); // Large golf ball size
+        // Force large, visible ball - don't rely on scale
+        const radius = 35; // Fixed large size for maximum visibility
         
         // Draw shadow first
         ctx.save();
@@ -734,6 +734,17 @@ class BucketBallGame {
 
         // Always draw ball - it should be visible for player interaction
         this.ball.draw(this.ctx, this.scale);
+        
+        // FORCE DRAW YELLOW BALL AS BACKUP - ensure visibility
+        this.ctx.save();
+        this.ctx.fillStyle = '#FFFF00';
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 3;
+        this.ctx.beginPath();
+        this.ctx.arc(this.LOGICAL_WIDTH / 2, this.LOGICAL_HEIGHT * 0.82, 35, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        this.ctx.restore();
 
         // --- Draw UI elements ---
         this.drawHUD();
