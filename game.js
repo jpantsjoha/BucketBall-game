@@ -642,6 +642,16 @@ class BucketBallGame {
         });
     }
 
+    disableInteraction() {
+        this.canArm = false;
+        console.log("User interaction disabled during loading");
+    }
+
+    enableInteraction() {
+        this.canArm = true;
+        console.log("User interaction enabled - game ready");
+    }
+
     getLogicalCoords(e) {
         const rect = this.canvas.getBoundingClientRect();
         return {
@@ -845,19 +855,27 @@ class BucketBallGame {
         // Always draw ball - it should be visible for player interaction
         this.ball.draw(this.ctx, this.scale);
         
-        // EMERGENCY BACKUP: Force bright yellow ball if needed
-        if (this.state === GameState.READY) {
-            const radius = 30;
-            this.ctx.save();
-            this.ctx.fillStyle = '#FFFF00';  // Ultra bright yellow
-            this.ctx.strokeStyle = '#000000';
-            this.ctx.lineWidth = 4;
-            this.ctx.beginPath();
-            this.ctx.arc(this.ball.x, this.ball.y, radius, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.stroke();
-            this.ctx.restore();
-        }
+        // PRODUCTION BALL VISIBILITY FIX: Always render bright yellow ball
+        // This ensures the ball is ALWAYS visible for gameplay
+        this.ctx.save();
+        
+        // Primary ball at the calculated ball position with enhanced visibility
+        this.ctx.fillStyle = '#FFFF00';  // Pure bright yellow RGB(255,255,0)
+        this.ctx.strokeStyle = '#000000'; // Black outline for contrast
+        this.ctx.lineWidth = 4;
+        this.ctx.beginPath();
+        this.ctx.arc(this.ball.x, this.ball.y, 32, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        // Add white highlight for 3D golf ball effect
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.globalAlpha = 0.8;
+        this.ctx.beginPath();
+        this.ctx.arc(this.ball.x - 8, this.ball.y - 8, 6, 0, Math.PI * 2);
+        this.ctx.fill();
+        
+        this.ctx.restore();
 
         // --- Draw UI elements ---
         this.drawHUD();
@@ -1002,9 +1020,68 @@ class BucketBallGame {
     }
 }
 
+// Loading Animation System
+class LoadingManager {
+    constructor() {
+        this.overlay = document.getElementById('loading-overlay');
+        this.progressFill = document.querySelector('.progress-fill');
+        this.isLoading = true;
+        this.gameReady = false;
+    }
+    
+    async startLoading() {
+        // Random duration between 1-2 seconds (1000-2000ms)
+        const duration = 1000 + Math.random() * 1000;
+        console.log(`Loading animation duration: ${duration.toFixed(0)}ms`);
+        
+        // Animate progress bar
+        let progress = 0;
+        const stepTime = 50; // Update every 50ms
+        const increment = (100 / (duration / stepTime));
+        
+        const progressInterval = setInterval(() => {
+            progress += increment;
+            if (progress >= 100) {
+                progress = 100;
+                clearInterval(progressInterval);
+                // Keep at 100% for a moment then hide
+                setTimeout(() => this.hideLoading(), 300);
+            }
+            this.progressFill.style.width = `${progress}%`;
+        }, stepTime);
+    }
+    
+    hideLoading() {
+        this.overlay.classList.add('hidden');
+        this.isLoading = false;
+        // Remove from DOM after fade completes
+        setTimeout(() => {
+            if (this.overlay.parentNode) {
+                this.overlay.parentNode.removeChild(this.overlay);
+            }
+        }, 500);
+        
+        // Enable game interaction
+        if (window.game && this.gameReady) {
+            window.game.enableInteraction();
+        }
+    }
+    
+    setGameReady() {
+        this.gameReady = true;
+        if (!this.isLoading && window.game) {
+            window.game.enableInteraction();
+        }
+    }
+}
+
 window.addEventListener('load', () => {
     const canvas = document.getElementById('game-canvas');
     if (canvas) {
+        // Start loading animation immediately
+        const loadingManager = new LoadingManager();
+        loadingManager.startLoading();
+        
         const assetManager = new AssetManager();
         // Define all assets to load
         assetManager.loadImage('upright_1x', 'assets/bucket_upright@1x.png');
@@ -1017,7 +1094,16 @@ window.addEventListener('load', () => {
         assetManager.loadAll().then(() => {
             console.log("Asset loading complete.");
             const game = new BucketBallGame(canvas, assetManager);
+            
+            // Disable interaction initially
+            game.disableInteraction();
+            
+            // Store loading manager reference
+            window.loadingManager = loadingManager;
+            window.game = game;
+            
             game.start();
+            loadingManager.setGameReady();
         });
     } else {
         console.error('Canvas element not found!');

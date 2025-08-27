@@ -26,7 +26,131 @@ html, body {
     touch-action: none; /* Prevents default touch actions like scrolling/zooming */
 }
 
-/* Toast Container Only */
+/* Loading Overlay */
+#loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.5); /* 50% white transparent overlay */
+    backdrop-filter: blur(2px);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Arial', sans-serif;
+}
+
+.loading-box {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 20px;
+    padding: 40px 50px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    border: 3px solid #2196F3;
+    text-align: center;
+    min-width: 300px;
+    max-width: 90%;
+    animation: bounceIn 0.6s ease-out;
+}
+
+.loading-title {
+    font-size: 28px;
+    font-weight: bold;
+    color: #1976D2;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.loading-subtitle {
+    font-size: 16px;
+    color: #424242;
+    margin-bottom: 25px;
+    font-weight: 500;
+}
+
+.progress-container {
+    margin: 20px 0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 12px;
+    background: #E3F2FD;
+    border-radius: 10px;
+    border: 2px solid #1976D2;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2196F3, #03A9F4, #00BCD4);
+    border-radius: 8px;
+    width: 0%;
+    transition: width 0.3s ease;
+    position: relative;
+    animation: shimmer 1.5s infinite;
+}
+
+.loading-tip {
+    font-size: 14px;
+    color: #666;
+    margin-top: 15px;
+    font-style: italic;
+}
+
+/* Animations */
+@keyframes bounceIn {
+    0% {
+        transform: scale(0.3);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    70% {
+        transform: scale(0.9);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200px 0;
+    }
+    100% {
+        background-position: 200px 0;
+    }
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background-image: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.4),
+        transparent
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+/* Hide overlay when loading complete */
+#loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease-out;
+}
+
+/* Toast Container */
 #toast-container {
     position: absolute;
     left: 50%;
