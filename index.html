@@ -9,18 +9,21 @@
 <body>
     <div id="game-container">
         <canvas id="game-canvas"></canvas>
-        <div id="help-banner">
-            <div class="banner-content">
-                <p><b>TRICK SHOT TIP:</b> Bounce the ball off the lawn first for a bonus point!</p>
-                <div class="banner-buttons">
-                    <button id="got-it-btn">Got it</button>
-                    <button id="remind-later-btn">Remind me later</button>
-                </div>
-            </div>
-            <div id="minimize-chevron">⌄</div>
-        </div>
-        <div id="help-pill">? Trick shot</div>
         <div id="toast-container"></div>
+        
+        <!-- Loading Overlay -->
+        <div id="loading-overlay">
+            <div class="loading-box">
+                <div class="loading-title">🎯 BucketBall 2028 🏌️‍♂️</div>
+                <div class="loading-subtitle">Loading your golf experience...</div>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                </div>
+                <div class="loading-tip">Tip: Drag from anywhere below the chalk line!</div>
+            </div>
+        </div>
     </div>
     <script src="game.js"></script>
 </body>

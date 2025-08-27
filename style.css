@@ -4,7 +4,10 @@ html, body {
     overflow: hidden;
     width: 100%;
     height: 100%;
-    background-color: #FFFFFF; /* White background as per spec */
+    background-image: url('images/bg_grass.png');
+    background-repeat: repeat;
+    background-size: auto auto; /* Natural tiling for mobile screens */
+    background-position: center center;
 }
 
 #game-container {
@@ -17,94 +20,148 @@ html, body {
 
 #game-canvas {
     display: block;
-    background-color: #FFFFFF; /* Match page background */
+    background-color: transparent; /* Transparent to show grass background */
     image-rendering: -webkit-optimize-contrast;
     image-rendering: pixelated;
     touch-action: none; /* Prevents default touch actions like scrolling/zooming */
 }
 
-/* UI Elements */
-#help-banner, #help-pill, #toast-container {
+/* Loading Overlay */
+#loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.5); /* 50% white transparent overlay */
+    backdrop-filter: blur(2px);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Arial', sans-serif;
+}
+
+.loading-box {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 20px;
+    padding: 40px 50px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    border: 3px solid #2196F3;
+    text-align: center;
+    min-width: 300px;
+    max-width: 90%;
+    animation: bounceIn 0.6s ease-out;
+}
+
+.loading-title {
+    font-size: 28px;
+    font-weight: bold;
+    color: #1976D2;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.loading-subtitle {
+    font-size: 16px;
+    color: #424242;
+    margin-bottom: 25px;
+    font-weight: 500;
+}
+
+.progress-container {
+    margin: 20px 0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 12px;
+    background: #E3F2FD;
+    border-radius: 10px;
+    border: 2px solid #1976D2;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2196F3, #03A9F4, #00BCD4);
+    border-radius: 8px;
+    width: 0%;
+    transition: width 0.3s ease;
+    position: relative;
+    animation: shimmer 1.5s infinite;
+}
+
+.loading-tip {
+    font-size: 14px;
+    color: #666;
+    margin-top: 15px;
+    font-style: italic;
+}
+
+/* Animations */
+@keyframes bounceIn {
+    0% {
+        transform: scale(0.3);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    70% {
+        transform: scale(0.9);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200px 0;
+    }
+    100% {
+        background-position: 200px 0;
+    }
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background-image: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.4),
+        transparent
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+/* Hide overlay when loading complete */
+#loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease-out;
+}
+
+/* Toast Container */
+#toast-container {
     position: absolute;
     left: 50%;
+    top: 25%;
     transform: translateX(-50%);
     width: 100%;
-    max-width: 500px; /* Max width for wider screens */
+    max-width: 500px;
     box-sizing: border-box;
     font-family: sans-serif;
     color: white;
     z-index: 10;
-}
-
-#help-banner {
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.85);
-    padding: 20px;
-    padding-right: 50px; /* Space for chevron */
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transform: translateY(110%);
-    transition: transform 0.3s ease-in-out;
-}
-#help-banner.visible {
-    transform: translateY(0);
-}
-.banner-content p {
-    margin: 0 0 15px 0;
-    line-height: 1.4;
-}
-.banner-buttons button {
-    padding: 10px 15px;
-    border: none;
-    border-radius: 5px;
-    margin-right: 10px;
-    cursor: pointer;
-    font-size: 16px;
-}
-#got-it-btn {
-    background-color: #3498DB;
-    color: white;
-}
-#remind-later-btn {
-    background-color: #555;
-    color: white;
-}
-#minimize-chevron {
-    position: absolute;
-    top: 50%;
-    right: 15px;
-    transform: translateY(-50%);
-    font-size: 30px;
-    cursor: pointer;
-    color: #999;
-}
-
-#help-pill {
-    left: 20px;
-    bottom: 20px;
-    transform: none;
-    width: auto;
-    background-color: #3498DB;
-    padding: 8px 12px;
-    border-radius: 20px;
-    font-size: 14px;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.3s, transform 0.3s;
-    pointer-events: none;
-}
-#help-pill.visible {
-    opacity: 1;
-    pointer-events: auto;
-}
-#help-pill.hidden {
-    transform: translateY(20px);
-    opacity: 0;
-}
-
-#toast-container {
-    top: 25%;
     pointer-events: none;
     display: flex;
     flex-direction: column;

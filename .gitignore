@@ -1,0 +1,14 @@
+.vercel
+
+# All test outputs go in test-results/ directory only
+test-results/
+*test*.py
+*qa*.py
+*validation*.py
+*.json
+*screenshot*.png
+*test_results*
+*validation_results*
+*journey_report*
+*_test.png
+*_qa.png
