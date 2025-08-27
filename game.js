@@ -155,26 +155,26 @@ class Ball {
         ctx.fill();
         ctx.restore();
         
-        // Main ball - BRIGHT YELLOW with rotation
+        // Main ball - ULTRA BRIGHT YELLOW with rotation
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.rotation);
         
-        // Draw ball
+        // Draw ball with maximum yellow visibility
         ctx.fillStyle = '#FFFF00';  // Pure bright yellow
         ctx.beginPath();
         ctx.arc(0, 0, radius, 0, Math.PI * 2);
         ctx.fill();
         
-        // Black outline for contrast
+        // Strong black outline for maximum contrast
         ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;  // Thicker outline
         ctx.stroke();
         
-        // Add dimple pattern for golf ball effect
-        ctx.strokeStyle = '#FFD700';
+        // Reduce dimple opacity so they don't dull the yellow
+        ctx.strokeStyle = '#FFCC00';
         ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.1;  // Much lighter dimples
         for (let i = 0; i < 3; i++) {
             ctx.beginPath();
             ctx.arc(radius * 0.3 * Math.cos(i * 2.1), radius * 0.3 * Math.sin(i * 2.1), radius * 0.15, 0, Math.PI * 2);
@@ -844,6 +844,20 @@ class BucketBallGame {
 
         // Always draw ball - it should be visible for player interaction
         this.ball.draw(this.ctx, this.scale);
+        
+        // EMERGENCY BACKUP: Force bright yellow ball if needed
+        if (this.state === GameState.READY) {
+            const radius = 30;
+            this.ctx.save();
+            this.ctx.fillStyle = '#FFFF00';  // Ultra bright yellow
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 4;
+            this.ctx.beginPath();
+            this.ctx.arc(this.ball.x, this.ball.y, radius, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.restore();
+        }
 
         // --- Draw UI elements ---
         this.drawHUD();
