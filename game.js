@@ -82,8 +82,8 @@ class Ball {
 
     reset() {
         this.x = this.game.LOGICAL_WIDTH / 2;
-        // Position ball clearly in visible area, much higher for mobile visibility
-        this.y = this.game.LOGICAL_HEIGHT * 0.75; // Higher position for guaranteed mobile visibility
+        // Position ball at chalk line level for proper perspective calculation
+        this.y = this.game.LOGICAL_HEIGHT * 0.85; // Below chalk line for maximum visibility
         this.vx = 0;
         this.vy = 0;
         this.landed = false;
@@ -97,15 +97,15 @@ class Ball {
     getPerspectiveFactor() {
         // Ball appears smaller when higher on screen (farther away in 3D space)
         // At chalk line (bottom): factor = 1.0 (normal size)
-        // At bucket level (top): factor = 0.4 (60% smaller - golf ball to bucket ratio)
+        // At bucket level (top): factor = 0.6 (40% smaller - but still visible)
         const chalkLineY = this.game.LOGICAL_HEIGHT * 0.8;
-        const bucketY = this.game.LOGICAL_HEIGHT * 0.15; // Approximate bucket position
+        const bucketY = this.game.LOGICAL_HEIGHT * 0.15;
         
-        // Calculate how far ball is from chalk line to bucket
+        // Ensure minimum visibility - never go below 0.6 scale
         const relativePosition = Math.max(0, Math.min(1, (chalkLineY - this.y) / (chalkLineY - bucketY)));
         
-        // Scale from 1.0 at chalk line to 0.4 at bucket (60% size reduction)
-        return 1.0 - (relativePosition * 0.6);
+        // Scale from 1.0 at chalk line to 0.6 at bucket (40% reduction max)
+        return Math.max(0.6, 1.0 - (relativePosition * 0.4)); // NEVER go below 0.6 scale
     }
     
     // Get effective radius for collision detection (accounts for perspective)
@@ -374,9 +374,9 @@ class Bucket {
             
             ctx.drawImage(bucketImage, drawX, drawY, perspectiveWidth, perspectiveHeight);
         } else {
-            // Professional 3D bucket rendering when sprites aren't available
-            const perspectiveWidth = this.width * scale;
-            const perspectiveHeight = this.height * scale;
+            // ENHANCED VISIBLE bucket rendering when sprites aren't available
+            const perspectiveWidth = this.width * scale * 1.5; // BIGGER bucket
+            const perspectiveHeight = this.height * scale * 1.5;
             const drawX = this.x - perspectiveWidth / 2;
             const drawY = this.y - perspectiveHeight;
             
@@ -385,16 +385,16 @@ class Bucket {
             ctx.rotate(this.tilt * Math.PI / 180);
             ctx.translate(-this.x, -this.y);
             
-            // Draw 3D bucket with gradients instead of flat rectangle
+            // Draw HIGHLY VISIBLE bucket with strong contrast
             const gradient = ctx.createLinearGradient(drawX, drawY, drawX + perspectiveWidth, drawY + perspectiveHeight);
-            gradient.addColorStop(0, '#333333');
-            gradient.addColorStop(0.3, '#111111');
-            gradient.addColorStop(0.7, '#000000');
-            gradient.addColorStop(1, '#111111');
+            gradient.addColorStop(0, '#666666');  // Lighter for visibility
+            gradient.addColorStop(0.3, '#333333');
+            gradient.addColorStop(0.7, '#111111');
+            gradient.addColorStop(1, '#444444');
             
             ctx.fillStyle = gradient;
-            ctx.strokeStyle = '#555555';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#FFFFFF';  // WHITE outline for maximum visibility
+            ctx.lineWidth = 4;  // Thicker outline
             
             // Draw bucket shape
             ctx.beginPath();
@@ -863,8 +863,20 @@ class BucketBallGame {
     draw() {
         // --- Clear and setup canvas for new frame ---
         this.ctx.save();
-        this.ctx.scale(this.dpr, this.dpr);  // Only scale by DPR, use full screen
-        // Clear canvas without filling with background color to show grass background
+        
+        // CRITICAL FIX: Scale canvas to map logical coordinates to physical coordinates
+        // First apply device pixel ratio scaling
+        this.ctx.scale(this.dpr, this.dpr);
+        
+        // Then apply logical-to-physical coordinate scaling
+        const physicalWidth = this.canvas.width / this.dpr;
+        const physicalHeight = this.canvas.height / this.dpr;
+        const logicalScaleX = physicalWidth / this.LOGICAL_WIDTH;
+        const logicalScaleY = physicalHeight / this.LOGICAL_HEIGHT;
+        
+        this.ctx.scale(logicalScaleX, logicalScaleY);
+        
+        // Clear canvas using logical dimensions (now properly scaled)
         this.ctx.clearRect(0, 0, this.LOGICAL_WIDTH, this.LOGICAL_HEIGHT);
 
         // --- Draw game objects in CORRECT ORDER FOR VISIBILITY ---
