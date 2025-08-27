@@ -71,7 +71,7 @@ const GameState = {
 class Ball {
     constructor(game) {
         this.game = game;
-        this.baseRadius = 25;  // Golf ball size - increased for visibility
+        this.baseRadius = 20;  // Golf ball size - reasonable for visibility
         this.reset();
         console.log("Ball created");
     }
@@ -89,13 +89,16 @@ class Ball {
     
     getPerspectiveFactor() {
         // Ball appears smaller when higher on screen (farther away in 3D space)
-        // At lawn level (bottom): factor = 1.0 (normal size)
-        // At bucket level (top): factor = CONFIG.DEPTH_SCALE_FACTOR (smaller)
-        const lawnY = this.game.LOGICAL_HEIGHT * (1 - CONFIG.LAWN_HEIGHT_PERCENT);
+        // At chalk line (bottom): factor = 1.0 (normal size)
+        // At bucket level (top): factor = 0.4 (60% smaller - golf ball to bucket ratio)
+        const chalkLineY = this.game.LOGICAL_HEIGHT * 0.8;
         const bucketY = this.game.LOGICAL_HEIGHT * 0.15; // Approximate bucket position
         
-        const relativePosition = Math.max(0, Math.min(1, (lawnY - this.y) / (lawnY - bucketY)));
-        return 1.0 - relativePosition * (1.0 - CONFIG.DEPTH_SCALE_FACTOR);
+        // Calculate how far ball is from chalk line to bucket
+        const relativePosition = Math.max(0, Math.min(1, (chalkLineY - this.y) / (chalkLineY - bucketY)));
+        
+        // Scale from 1.0 at chalk line to 0.4 at bucket (60% size reduction)
+        return 1.0 - (relativePosition * 0.6);
     }
     
     // Get effective radius for collision detection (accounts for perspective)
@@ -116,8 +119,9 @@ class Ball {
     }
 
     draw(ctx, scale) {
-        // Force large, visible ball - don't rely on scale
-        const radius = 35; // Fixed large size for maximum visibility
+        // Apply perspective scaling - ball gets smaller as it approaches bucket
+        const perspectiveFactor = this.getPerspectiveFactor();
+        const radius = this.baseRadius * perspectiveFactor * 1.4; // 20% smaller base, with perspective
         
         // Draw shadow first
         ctx.save();
@@ -549,13 +553,11 @@ class BucketBallGame {
 
         // Allow interaction anywhere on screen for more natural feel
         if (this.state === GameState.READY || this.state === GameState.ARMED) {
-            // Check if clicking within 10px of ball (as requested)
-            const ballDistance = Math.hypot(pos.x - this.ball.x, pos.y - this.ball.y);
-            const clickRadius = 10 / this.scale; // 10px click radius adjusted for scale
+            // Allow dragging from ANYWHERE below the chalk line (bottom 20% of screen)
+            const chalkLineY = this.LOGICAL_HEIGHT * 0.8; // Chalk line position
             
-            // Allow interaction within 10px of ball OR in bottom 20% area
-            const bottomAreaY = this.LOGICAL_HEIGHT * 0.8;
-            if (ballDistance <= clickRadius || pos.y > bottomAreaY) {
+            // Very generous interaction - anywhere below chalk line
+            if (pos.y > chalkLineY) {
                 this.input.isPointerDown = true;
                 this.input.startPos = pos;
                 this.input.currentPos = pos;
@@ -595,13 +597,18 @@ class BucketBallGame {
         if (this.state === GameState.ARMED) {
             // More natural throwing - any significant drag launches the ball
             if (swipeLength >= 30) {  // Lower threshold for more responsive feel
+                // Move ball to chalk line position for launch (X follows drag, Y at chalk line)
+                const chalkLineY = this.LOGICAL_HEIGHT * 0.8;
+                this.ball.x = this.LOGICAL_WIDTH / 2 + (dx * 0.5); // Allow some horizontal adjustment
+                this.ball.y = chalkLineY; // Always launch from chalk line
+                
                 // Scale velocity based on drag distance and screen size
                 const velocityScale = 3.0 + (this.scale * 2.0); // Adjust for screen size
                 this.ball.vx = -dx * velocityScale;
                 this.ball.vy = -dy * velocityScale;
                 this.state = GameState.LAUNCHED;
                 this.ball.landed = false;
-                console.log(`Ball launched: vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
+                console.log(`Ball launched from chalk line: x=${this.ball.x.toFixed(1)}, y=${this.ball.y.toFixed(1)}, vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
             } else if (swipeLength < 10 && !this.input.isDragMode) {
                 // Small tap when not dragging ball - just stay armed
                 this.disarmTimer = setTimeout(() => {
@@ -734,17 +741,6 @@ class BucketBallGame {
 
         // Always draw ball - it should be visible for player interaction
         this.ball.draw(this.ctx, this.scale);
-        
-        // FORCE DRAW YELLOW BALL AS BACKUP - ensure visibility
-        this.ctx.save();
-        this.ctx.fillStyle = '#FFFF00';
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 3;
-        this.ctx.beginPath();
-        this.ctx.arc(this.LOGICAL_WIDTH / 2, this.LOGICAL_HEIGHT * 0.82, 35, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-        this.ctx.restore();
 
         // --- Draw UI elements ---
         this.drawHUD();
