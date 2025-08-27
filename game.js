@@ -144,7 +144,7 @@ class Ball {
         
         // Apply perspective scaling - ball gets smaller as it approaches bucket
         const perspectiveFactor = this.getPerspectiveFactor();
-        const radius = this.baseRadius * perspectiveFactor * 2.0; // BIGGER ball for visibility
+        const radius = this.baseRadius * Math.max(2.0, scale) * perspectiveFactor * 3.0; // MUCH BIGGER with forced scale
         
         // Draw shadow first
         ctx.save();
@@ -375,8 +375,8 @@ class Bucket {
             ctx.drawImage(bucketImage, drawX, drawY, perspectiveWidth, perspectiveHeight);
         } else {
             // ENHANCED VISIBLE bucket rendering when sprites aren't available
-            const perspectiveWidth = this.width * scale * 1.5; // BIGGER bucket
-            const perspectiveHeight = this.height * scale * 1.5;
+            const perspectiveWidth = this.width * Math.max(3.0, scale) * 2.5; // MUCH BIGGER bucket
+            const perspectiveHeight = this.height * Math.max(3.0, scale) * 2.5;
             const drawX = this.x - perspectiveWidth / 2;
             const drawY = this.y - perspectiveHeight;
             
@@ -886,8 +886,8 @@ class BucketBallGame {
         // 2. Middle layer - bucket
         this.bucket.draw(this.ctx);
         
-        // 3. TOP LAYER - BALL (ALWAYS ON TOP!)
-        this.ball.draw(this.ctx, this.scale);
+        // 3. TOP LAYER - BALL (ALWAYS ON TOP!) - Force minimum scale for visibility
+        this.ball.draw(this.ctx, Math.max(2.0, this.scale));
         
         // Add indicator arrow when ball is at starting position
         if ((this.state === GameState.READY || this.state === GameState.ARMED)) {
