@@ -1,12 +1,14 @@
 .vercel
 
-# Test screenshots and results
-*screenshots/
-*_screenshots/
-journey_screenshots/
-gameplay_screenshots/
-action_screenshots/
+# All test outputs go in test-results/ directory only
+test-results/
+*test*.py
+*qa*.py
+*validation*.py
 *.json
+*screenshot*.png
 *test_results*
 *validation_results*
 *journey_report*
+*_test.png
+*_qa.png
