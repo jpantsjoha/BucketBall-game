@@ -72,6 +72,10 @@ class Ball {
     constructor(game) {
         this.game = game;
         this.baseRadius = 20;  // Golf ball size - reasonable for visibility
+        this.trail = [];  // Store previous positions for trail effect
+        this.maxTrailLength = 15;  // Number of trail segments
+        this.rotation = 0;  // Ball rotation for visual effect
+        this.spinRate = 0;  // Rotation speed
         this.reset();
         console.log("Ball created");
     }
@@ -84,6 +88,9 @@ class Ball {
         this.vy = 0;
         this.landed = false;
         this.firstCollision = null;
+        this.trail = [];  // Clear trail
+        this.rotation = 0;
+        this.spinRate = 0;
         console.log(`Ball reset to position: x=${this.x.toFixed(1)}, y=${this.y.toFixed(1)} on ${this.game.LOGICAL_WIDTH}x${this.game.LOGICAL_HEIGHT} canvas`);
     }
     
@@ -109,16 +116,32 @@ class Ball {
     update(deltaTime, wind) {
         if (this.landed) return;
 
-        // Apply gravity and wind
-        this.vy += CONFIG.GRAVITY * deltaTime;
+        // Store current position in trail (only when moving fast enough)
+        const speed = Math.hypot(this.vx, this.vy);
+        if (speed > 50) {
+            this.trail.push({ x: this.x, y: this.y, size: this.getPerspectiveFactor() });
+            if (this.trail.length > this.maxTrailLength) {
+                this.trail.shift();  // Remove oldest trail point
+            }
+        }
+
+        // Apply gravity and wind with slight randomness
+        const gravityJitter = 1 + (Math.random() - 0.5) * 0.02;  // ±1% variation
+        this.vy += CONFIG.GRAVITY * deltaTime * gravityJitter;
         this.vx += wind * CONFIG.WIND_FACTOR * deltaTime;
 
         // Update position
         this.x += this.vx * deltaTime;
         this.y += this.vy * deltaTime;
+        
+        // Update rotation based on velocity
+        this.rotation += (this.vx * 0.01 + this.spinRate) * deltaTime;
     }
 
     draw(ctx, scale) {
+        // Draw trail first (behind ball)
+        this.drawTrail(ctx);
+        
         // Apply perspective scaling - ball gets smaller as it approaches bucket
         const perspectiveFactor = this.getPerspectiveFactor();
         const radius = this.baseRadius * perspectiveFactor * 1.4; // 20% smaller base, with perspective
@@ -132,17 +155,31 @@ class Ball {
         ctx.fill();
         ctx.restore();
         
-        // Main ball - BRIGHT YELLOW
+        // Main ball - BRIGHT YELLOW with rotation
         ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        
+        // Draw ball
         ctx.fillStyle = '#FFFF00';  // Pure bright yellow
         ctx.beginPath();
-        ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
         ctx.fill();
         
         // Black outline for contrast
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 3;
         ctx.stroke();
+        
+        // Add dimple pattern for golf ball effect
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.3;
+        for (let i = 0; i < 3; i++) {
+            ctx.beginPath();
+            ctx.arc(radius * 0.3 * Math.cos(i * 2.1), radius * 0.3 * Math.sin(i * 2.1), radius * 0.15, 0, Math.PI * 2);
+            ctx.stroke();
+        }
         ctx.restore();
         
         // White highlight for 3D effect
@@ -153,7 +190,24 @@ class Ball {
         ctx.arc(this.x - radius * 0.25, this.y - radius * 0.25, radius * 0.15, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
-        
+    }
+    
+    drawTrail(ctx) {
+        // Draw motion trail
+        for (let i = 0; i < this.trail.length; i++) {
+            const point = this.trail[i];
+            const opacity = (i / this.trail.length) * 0.3;  // Fade older trail points
+            
+            ctx.save();
+            ctx.globalAlpha = opacity;
+            ctx.fillStyle = '#FFFF00';
+            
+            const trailRadius = this.baseRadius * point.size * 0.5 * (i / this.trail.length);
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, trailRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
     }
 }
 
@@ -186,6 +240,10 @@ class Bucket {
         this.tilt = 0; // degrees
         this.tiltVelocity = 0;
         this.isToppled = false;
+        this.wobble = 0;  // Current wobble angle
+        this.wobbleVelocity = 0;  // Wobble momentum
+        this.stability = 0.85 + (Math.random() * 0.3);  // Random stability (0.85-1.15)
+        this.settleTimer = 0;
     }
 
     getBounds() {
@@ -367,7 +425,52 @@ class Lawn {
         this.game = game;
         this.height = this.game.LOGICAL_HEIGHT * CONFIG.LAWN_HEIGHT_PERCENT;
         this.y = this.game.LOGICAL_HEIGHT - this.height;
+        // Create uneven grass surface with random variations
+        this.surfaceVariation = this.generateSurfaceNoise();
         console.log("Lawn created");
+    }
+    
+    generateSurfaceNoise() {
+        // Create random height variations across the lawn width
+        const variations = [];
+        const numPoints = 30;
+        for (let i = 0; i < numPoints; i++) {
+            variations.push((Math.random() - 0.5) * 12); // ±6px variation
+        }
+        return variations;
+    }
+
+    getSurfaceHeightAt(x) {
+        // Get surface height variation at specific x position
+        const index = Math.floor((x / this.game.LOGICAL_WIDTH) * this.surfaceVariation.length);
+        return this.surfaceVariation[Math.max(0, Math.min(this.surfaceVariation.length - 1, index))] || 0;
+    }
+
+    checkCollision(ball) {
+        const surfaceHeight = this.getSurfaceHeightAt(ball.x);
+        const effectiveLawnY = this.y + surfaceHeight;
+        
+        if (ball.y + ball.radius >= effectiveLawnY && !ball.firstCollision) {
+            ball.firstCollision = 'lawn';
+            
+            // Random bounce characteristics for realistic grass
+            const bounceRandomness = 0.8 + (Math.random() * 0.4); // 0.8-1.2 multiplier
+            const angleRandomness = (Math.random() - 0.5) * 0.3; // ±0.15 radian variation
+            
+            // Bounce with variable restitution
+            ball.vy = -ball.vy * CONFIG.LAWN_RESTITUTION * bounceRandomness;
+            ball.vx *= CONFIG.FRICTION; // Friction slows down horizontal movement
+            
+            // Add slight angle variation for uneven grass
+            ball.vx += ball.vy * angleRandomness;
+            
+            // Spin effects from grass contact
+            ball.spinRate = (Math.random() - 0.5) * 3.0;
+            
+            ball.y = effectiveLawnY - ball.radius; // Correct position
+            
+            console.log(`Grass bounce: height=${surfaceHeight.toFixed(1)}, restitution=${bounceRandomness.toFixed(2)}, spin=${ball.spinRate.toFixed(2)}`);
+        }
     }
 
     update(deltaTime) { /* State changes will go here */ }
