@@ -618,6 +618,10 @@ class BucketBallGame {
         this.lawn.height = this.LOGICAL_HEIGHT * CONFIG.LAWN_HEIGHT_PERCENT;
         this.lawn.y = this.LOGICAL_HEIGHT - this.lawn.height;
         
+        // CRITICAL FIX: Reset ball and bucket positions after resize to prevent off-screen rendering
+        this.ball.reset();
+        this.bucket.reset();
+        
         console.log(`Resized to full screen: ${displayWidth}x${displayHeight}, Logical: ${this.LOGICAL_WIDTH.toFixed(0)}x${this.LOGICAL_HEIGHT.toFixed(0)}, Scale: ${this.scale.toFixed(3)}`);
         this.draw(); // Redraw immediately on resize
     }
