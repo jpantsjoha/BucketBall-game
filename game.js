@@ -95,17 +95,17 @@ class Ball {
     }
     
     getPerspectiveFactor() {
-        // Ball appears smaller when higher on screen (farther away in 3D space)
-        // At chalk line (bottom): factor = 1.0 (normal size)
-        // At bucket level (top): factor = 0.4 (60% smaller - golf ball to bucket ratio)
-        const chalkLineY = this.game.LOGICAL_HEIGHT * 0.8;
-        const bucketY = this.game.LOGICAL_HEIGHT * 0.15; // Approximate bucket position
+        // ADR-005: Ball shrinks as it approaches bucket (5m distance)
+        // At player position (85%): factor = 1.0 (large, close to player)
+        // At bucket position (20%): factor = 0.5 (50% smaller - maximum reduction)
+        const playerY = this.game.LOGICAL_HEIGHT * 0.85;  // Player throwing position
+        const bucketY = this.game.LOGICAL_HEIGHT * 0.20;  // Bucket in top 20%
         
-        // Calculate how far ball is from chalk line to bucket
-        const relativePosition = Math.max(0, Math.min(1, (chalkLineY - this.y) / (chalkLineY - bucketY)));
+        // Calculate how far ball has traveled from player to bucket
+        const relativeDistance = Math.max(0, Math.min(1, (playerY - this.y) / (playerY - bucketY)));
         
-        // Scale from 1.0 at chalk line to 0.4 at bucket (60% size reduction)
-        return 1.0 - (relativePosition * 0.6);
+        // Ball must be 4x smaller than bucket when close - so 75% size reduction
+        return Math.max(0.25, 1.0 - relativeDistance * 0.75);
     }
     
     // Get effective radius for collision detection (accounts for perspective)
@@ -229,9 +229,9 @@ class Bucket {
         // but appears higher due to viewing angle and distance
         const grassGroundY = this.game.LOGICAL_HEIGHT * 0.95; // Actual ground level
         
-        // Visual position accounting for 45-degree viewing angle
-        // Bucket appears at 60% down screen but is actually at ground level
-        this.y = this.game.LOGICAL_HEIGHT * 0.6; // Visual position on screen
+        // ADR-005: Bucket positioned in top 20% to show 5-meter distance
+        // Visual position accounting for 25-35° downward perspective  
+        this.y = this.game.LOGICAL_HEIGHT * 0.20; // Top 20% screen for distance effect
         this.actualGroundY = grassGroundY; // Store actual ground position for physics
 
         // Add some horizontal variation for gameplay variety
@@ -879,8 +879,9 @@ class BucketBallGame {
         this.ctx.lineWidth = 6;
         this.ctx.globalAlpha = 1.0;
         
-        // Use actual ball position for interactivity - update ball radius for physics
-        const ballRadius = 45; // Large enough to see and click
+        // Use perspective-scaled ball radius for proper 3D physics
+        const perspectiveFactor = this.ball.getPerspectiveFactor();
+        const ballRadius = 45 * perspectiveFactor; // Scale with distance - shrinks near bucket
         this.ball.radius = ballRadius; // Update ball's collision radius to match visual
         
         this.ctx.beginPath();
