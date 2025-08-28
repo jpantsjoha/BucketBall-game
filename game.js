@@ -727,10 +727,16 @@ class BucketBallGame {
                 this.ball.x = this.LOGICAL_WIDTH / 2 + (dx * 0.5); // Allow some horizontal adjustment
                 this.ball.y = playerY; // Launch from player position, not chalk line
                 
-                // Scale velocity based on drag distance and screen size
-                const velocityScale = 3.0 + (this.scale * 2.0); // Adjust for screen size
-                this.ball.vx = dx * velocityScale;  // FIXED: Remove negative to match drag direction
-                this.ball.vy = dy * velocityScale;  // FIXED: Remove negative to match drag direction
+                // ADR-005: 3D trajectory physics - drag toward bucket creates forward momentum
+                const velocityScale = 3.0 + (this.scale * 2.0);
+                this.ball.vx = dx * velocityScale;  // Horizontal movement (left/right)
+                
+                // CRITICAL 3D FIX: Downward drag = forward momentum toward distant bucket
+                // Positive dy (dragging down) should create FORWARD velocity toward bucket
+                const forwardMomentum = Math.abs(dy) * velocityScale * 1.5; // Forward velocity toward bucket
+                this.ball.vy = -forwardMomentum; // Negative Y = upward initial velocity for arc
+                
+                console.log(`3D Trajectory: dx=${dx.toFixed(1)}, dy=${dy.toFixed(1)} -> vx=${this.ball.vx.toFixed(1)}, forward_momentum=${forwardMomentum.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
                 this.state = GameState.LAUNCHED;
                 this.ball.landed = false;
                 console.log(`Ball launched from player position: x=${this.ball.x.toFixed(1)}, y=${this.ball.y.toFixed(1)}, vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
@@ -1017,8 +1023,10 @@ class BucketBallGame {
         const dx = this.input.currentPos.x - startX;
         const dy = this.input.currentPos.y - startY;
         const velocityScale = 3.0 + (this.scale * 2.0);
-        const previewVx = dx * velocityScale * 0.3; // FIXED: Match actual throw direction
-        const previewVy = dy * velocityScale * 0.3; // FIXED: Match actual throw direction
+        const previewVx = dx * velocityScale * 0.3; // Horizontal movement
+        // Match 3D trajectory physics: downward drag creates upward initial velocity
+        const forwardMomentum = Math.abs(dy) * velocityScale * 1.5;
+        const previewVy = -forwardMomentum * 0.3; // Initial upward velocity for arc
         
         this.ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
         for (let i = 1; i <= 5; i++) {
