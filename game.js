@@ -135,10 +135,30 @@ class Ball {
         const airResistance = 0.998; // 0.2% velocity loss per frame (realistic for golf ball)
         this.vx *= airResistance;
         this.vy *= airResistance;
+        
+        // 3D perspective velocity scaling - ball appears slower when farther away (near bucket)
+        const playerY = this.game.LOGICAL_HEIGHT * 0.85; // Player position
+        const bucketY = this.game.LOGICAL_HEIGHT * 0.20; // Bucket position  
+        const distanceProgress = Math.max(0, Math.min(1, (playerY - this.y) / (playerY - bucketY)));
+        
+        // Apply perspective-based velocity scaling (ball appears slower when distant)
+        const perspectiveVelocityScale = 1.0 - (distanceProgress * 0.1); // 10% slower at bucket
+        this.vx *= perspectiveVelocityScale;
+        this.vy *= perspectiveVelocityScale;
 
         // Update position
         this.x += this.vx * deltaTime;
         this.y += this.vy * deltaTime;
+        
+        // CRITICAL: Prevent ball from returning to chalk line area (physics violation)
+        // Once ball is thrown forward, it should never go back to player position
+        const chalkLineY = this.game.LOGICAL_HEIGHT * 0.8; // Chalk line at 80%
+        if (this.y > chalkLineY && this.vy > 0) {
+            // Ball is moving back toward player - this is physically impossible
+            // Stop backward movement and settle the ball
+            this.vy = Math.min(this.vy, 0); // Don't allow movement toward chalk line
+            console.log(`Preventing physics violation: Ball attempted to return to chalk line at y=${this.y.toFixed(1)}`);
+        }
         
         // Update rotation based on velocity
         this.rotation += (this.vx * 0.01 + this.spinRate) * deltaTime;
@@ -739,7 +759,7 @@ class BucketBallGame {
                 
                 // CRITICAL 3D FIX: Downward drag = forward momentum toward distant bucket
                 // Positive dy (dragging down) should create FORWARD velocity toward bucket
-                const forwardMomentum = Math.abs(dy) * velocityScale * 1.5; // Forward velocity toward bucket
+                const forwardMomentum = Math.abs(dy) * velocityScale * 1.0; // Reduced from 1.5 to prevent excessive speed
                 this.ball.vy = -forwardMomentum; // Negative Y = upward initial velocity for arc
                 
                 console.log(`3D Trajectory: dx=${dx.toFixed(1)}, dy=${dy.toFixed(1)} -> vx=${this.ball.vx.toFixed(1)}, forward_momentum=${forwardMomentum.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
@@ -875,11 +895,12 @@ class BucketBallGame {
             console.log(`Grass bounce: restitution=${restitution.toFixed(2)}, deviation=${(deviationAngle * 180 / Math.PI).toFixed(1)}°, speed=${speed.toFixed(1)}`);
         }
 
-        // 2. Side wall collisions - reduced bounce to prevent balls ricocheting back
+        // 2. Side wall collisions - minimal bounce to prevent return to player
         if ((ball.x - ball.radius * this.scale <= 0 && ball.vx < 0) || (ball.x + ball.radius * this.scale >= this.LOGICAL_WIDTH && ball.vx > 0)) {
-            ball.vx *= -0.4; // Much less bouncy walls (reduced from -0.8)
-            ball.vy *= 0.8; // Also reduce vertical velocity on wall hits
+            ball.vx *= -0.2; // Minimal wall bounce (reduced from -0.4)  
+            ball.vy *= 0.6; // Significant vertical velocity reduction
             ball.x = Math.max(ball.radius * this.scale, Math.min(this.LOGICAL_WIDTH - ball.radius * this.scale, ball.x));
+            console.log(`Wall collision: reduced velocities to vx=${ball.vx.toFixed(1)}, vy=${ball.vy.toFixed(1)}`);
         }
 
         // 3. Bucket collision
@@ -1044,7 +1065,7 @@ class BucketBallGame {
         const velocityScale = 3.0 + (this.scale * 2.0);
         const previewVx = dx * velocityScale * 0.3; // Horizontal movement
         // Match 3D trajectory physics: downward drag creates upward initial velocity
-        const forwardMomentum = Math.abs(dy) * velocityScale * 1.5;
+        const forwardMomentum = Math.abs(dy) * velocityScale * 1.0; // Match actual physics
         const previewVy = -forwardMomentum * 0.3; // Initial upward velocity for arc
         
         this.ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
