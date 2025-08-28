@@ -722,18 +722,18 @@ class BucketBallGame {
         if (this.state === GameState.ARMED) {
             // More natural throwing - any significant drag launches the ball
             if (swipeLength >= 30) {  // Lower threshold for more responsive feel
-                // Move ball to chalk line position for launch (X follows drag, Y at chalk line)
-                const chalkLineY = this.LOGICAL_HEIGHT * 0.8;
+                // Move ball to player position for launch (ADR-005: 3D perspective model)
+                const playerY = this.LOGICAL_HEIGHT * 0.85; // Player at 85% screen height (1.5m above ground)
                 this.ball.x = this.LOGICAL_WIDTH / 2 + (dx * 0.5); // Allow some horizontal adjustment
-                this.ball.y = chalkLineY; // Always launch from chalk line
+                this.ball.y = playerY; // Launch from player position, not chalk line
                 
                 // Scale velocity based on drag distance and screen size
                 const velocityScale = 3.0 + (this.scale * 2.0); // Adjust for screen size
-                this.ball.vx = -dx * velocityScale;
-                this.ball.vy = -dy * velocityScale;
+                this.ball.vx = dx * velocityScale;  // FIXED: Remove negative to match drag direction
+                this.ball.vy = dy * velocityScale;  // FIXED: Remove negative to match drag direction
                 this.state = GameState.LAUNCHED;
                 this.ball.landed = false;
-                console.log(`Ball launched from chalk line: x=${this.ball.x.toFixed(1)}, y=${this.ball.y.toFixed(1)}, vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
+                console.log(`Ball launched from player position: x=${this.ball.x.toFixed(1)}, y=${this.ball.y.toFixed(1)}, vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
             } else if (swipeLength < 10 && !this.input.isDragMode) {
                 // Small tap when not dragging ball - just stay armed
                 this.disarmTimer = setTimeout(() => {
@@ -1016,8 +1016,8 @@ class BucketBallGame {
         const dx = this.input.currentPos.x - startX;
         const dy = this.input.currentPos.y - startY;
         const velocityScale = 3.0 + (this.scale * 2.0);
-        const previewVx = -dx * velocityScale * 0.3; // Scaled down for preview
-        const previewVy = -dy * velocityScale * 0.3;
+        const previewVx = dx * velocityScale * 0.3; // FIXED: Match actual throw direction
+        const previewVy = dy * velocityScale * 0.3; // FIXED: Match actual throw direction
         
         this.ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
         for (let i = 1; i <= 5; i++) {
