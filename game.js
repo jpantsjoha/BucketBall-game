@@ -14,9 +14,10 @@ const CONFIG = {
     GRAVITY: 2000, // px/s²
     WIND_RANGE: [-2.0, 2.0], // m/s
     WIND_FACTOR: 40, // Conversion factor from m/s to px/s²
-    BALL_RESTITUTION: [0.55, 0.65], // min/max
+    BALL_RESTITUTION: [0.25, 0.35], // Realistic golf ball bounce (reduced from 0.55-0.65)
     BALL_SPIN_JITTER: 0.05,
-    LAWN_RESTITUTION: 0.35,
+    LAWN_RESTITUTION: 0.20, // Grass absorbs energy (reduced from 0.35)
+    FRICTION: 0.85, // Grass friction reduces horizontal velocity
     LAWN_NORMAL_JITTER: 2, // degrees
     BUCKET_TILT_DAMPING: 0.95,
     BUCKET_TOPPLE_ANGLE: 18, // degrees
@@ -129,6 +130,11 @@ class Ball {
         const gravityJitter = 1 + (Math.random() - 0.5) * 0.02;  // ±1% variation
         this.vy += CONFIG.GRAVITY * deltaTime * gravityJitter;
         this.vx += wind * CONFIG.WIND_FACTOR * deltaTime;
+        
+        // Air resistance over 5-meter distance - realistic velocity loss
+        const airResistance = 0.998; // 0.2% velocity loss per frame (realistic for golf ball)
+        this.vx *= airResistance;
+        this.vy *= airResistance;
 
         // Update position
         this.x += this.vx * deltaTime;
@@ -841,25 +847,38 @@ class BucketBallGame {
     checkCollisions() {
         const ball = this.ball;
 
-        // 1. Grass ground collision (bottom of screen is the actual ground)
+        // 1. Realistic grass ground collision with proper energy loss
         const grassGroundY = this.LOGICAL_HEIGHT * 0.95; // 95% down - grass surface level
         if (ball.y + ball.radius >= grassGroundY && ball.vy > 0) {
             if (ball.firstCollision === null) ball.firstCollision = 'lawn';
             ball.y = grassGroundY - ball.radius;
-            const restitution = CONFIG.BALL_RESTITUTION[0] + Math.random() * (CONFIG.BALL_RESTITUTION[1] - CONFIG.BALL_RESTITUTION[0]);
-            ball.vy *= -restitution * CONFIG.LAWN_RESTITUTION;
-            ball.vx *= 0.9; // Grass friction
             
-            // Aggressive settling to prevent endless rolling
-            if (Math.abs(ball.vy) < 100 && Math.abs(ball.vx) < 150) {
-                ball.vx *= 0.7; // Heavy friction on grass
-                ball.vy *= 0.5; // Reduce bounce quickly
+            // Realistic golf ball bounce on grass - small bounces that settle quickly
+            const restitution = CONFIG.BALL_RESTITUTION[0] + Math.random() * (CONFIG.BALL_RESTITUTION[1] - CONFIG.BALL_RESTITUTION[0]);
+            ball.vy *= -restitution * CONFIG.LAWN_RESTITUTION; // Much lower bounce
+            ball.vx *= CONFIG.FRICTION; // Apply grass friction
+            
+            // Add small trajectory deviation (±1-2 degrees) for realism
+            const deviationAngle = (Math.random() - 0.5) * 0.035; // ±2 degrees in radians
+            const speed = Math.hypot(ball.vx, ball.vy);
+            const currentAngle = Math.atan2(ball.vy, ball.vx);
+            const newAngle = currentAngle + deviationAngle;
+            ball.vx = Math.cos(newAngle) * speed * CONFIG.FRICTION;
+            ball.vy = Math.sin(newAngle) * speed * CONFIG.FRICTION;
+            
+            // Much more aggressive settling - ball should stop where it lands
+            if (Math.abs(ball.vy) < 80 && Math.abs(ball.vx) < 100) {
+                ball.vx *= 0.5; // Rapid horizontal deceleration
+                ball.vy *= 0.3; // Rapid vertical deceleration  
             }
+            
+            console.log(`Grass bounce: restitution=${restitution.toFixed(2)}, deviation=${(deviationAngle * 180 / Math.PI).toFixed(1)}°, speed=${speed.toFixed(1)}`);
         }
 
-        // 2. Side wall collisions
+        // 2. Side wall collisions - reduced bounce to prevent balls ricocheting back
         if ((ball.x - ball.radius * this.scale <= 0 && ball.vx < 0) || (ball.x + ball.radius * this.scale >= this.LOGICAL_WIDTH && ball.vx > 0)) {
-            ball.vx *= -0.8; // Bouncy walls
+            ball.vx *= -0.4; // Much less bouncy walls (reduced from -0.8)
+            ball.vy *= 0.8; // Also reduce vertical velocity on wall hits
             ball.x = Math.max(ball.radius * this.scale, Math.min(this.LOGICAL_WIDTH - ball.radius * this.scale, ball.x));
         }
 
