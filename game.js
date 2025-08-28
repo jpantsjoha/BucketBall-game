@@ -225,11 +225,16 @@ class Bucket {
         // Set anchor point to be the bottom-center of the bucket
         this.x = this.game.LOGICAL_WIDTH / 2;
 
-        const yRange = CONFIG.BUCKET_Y_PERCENT_RANGE;
-        const yPercent = yRange[0] + Math.random() * (yRange[1] - yRange[0]);
-        // this.y is the BOTTOM of the bucket
-        this.y = this.game.LOGICAL_HEIGHT * yPercent;
+        // 45-degree perspective view: bucket is on same ground level as ball
+        // but appears higher due to viewing angle and distance
+        const grassGroundY = this.game.LOGICAL_HEIGHT * 0.95; // Actual ground level
+        
+        // Visual position accounting for 45-degree viewing angle
+        // Bucket appears at 60% down screen but is actually at ground level
+        this.y = this.game.LOGICAL_HEIGHT * 0.6; // Visual position on screen
+        this.actualGroundY = grassGroundY; // Store actual ground position for physics
 
+        // Add some horizontal variation for gameplay variety
         const jitter = (Math.random() - 0.5) * 2 * CONFIG.BUCKET_X_JITTER_PERCENT * this.game.LOGICAL_WIDTH;
         this.x += jitter;
         
@@ -673,8 +678,11 @@ class BucketBallGame {
             // Allow dragging from ANYWHERE below the chalk line (bottom 20% of screen)
             const chalkLineY = this.LOGICAL_HEIGHT * 0.8; // Chalk line position
             
-            // Very generous interaction - anywhere below chalk line
-            if (pos.y > chalkLineY) {
+            // Very generous interaction - anywhere below chalk line OR near ball
+            const ballDistance = Math.hypot(pos.x - this.ball.x, pos.y - this.ball.y);
+            const interactionRadius = 100; // Large interaction area around ball
+            
+            if (pos.y > chalkLineY || ballDistance <= interactionRadius) {
                 this.input.isPointerDown = true;
                 this.input.startPos = pos;
                 this.input.currentPos = pos;
@@ -790,9 +798,10 @@ class BucketBallGame {
             this.checkCollisions();
 
             const ballSpeed = Math.hypot(this.ball.vx, this.ball.vy);
-            if (ballSpeed < CONFIG.SETTLE_VELOCITY_THRESHOLD) {
+            // Faster settling - reduce wait time and be more aggressive
+            if (ballSpeed < 50) { // Increased threshold for faster settling
                 this.settleTimer += deltaTime;
-                if (this.settleTimer > CONFIG.SETTLE_DURATION) {
+                if (this.settleTimer > 1.5) { // Reduced from 400ms to 1.5 seconds max
                     this.state = GameState.RESOLVING;
                     this.ball.landed = true;
                     this.resolveThrow();
@@ -801,8 +810,8 @@ class BucketBallGame {
                 this.settleTimer = 0;
             }
             
-            // Auto-reset if ball is rolling indefinitely at bottom of screen
-            if (this.ball.y >= this.LOGICAL_HEIGHT - 50 && ballSpeed > CONFIG.SETTLE_VELOCITY_THRESHOLD && ballSpeed < 100) {
+            // Aggressive auto-reset to prevent endless rolling
+            if (this.ball.y >= this.LOGICAL_HEIGHT * 0.9) { // Near bottom of screen
                 if (!this.missResetTimer) {
                     this.missResetTimer = setTimeout(() => {
                         if (this.state === GameState.LAUNCHED) {
@@ -810,7 +819,7 @@ class BucketBallGame {
                             this.ball.landed = true;
                             this.resolveThrow();
                         }
-                    }, CONFIG.MISS_AUTO_RESET_DELAY);
+                    }, 2000); // Force reset after 2 seconds maximum
                 }
             } else {
                 if (this.missResetTimer) {
@@ -826,13 +835,20 @@ class BucketBallGame {
     checkCollisions() {
         const ball = this.ball;
 
-        // 1. Lawn collision
-        if (ball.y + ball.radius >= this.lawn.y && ball.vy > 0) {
+        // 1. Grass ground collision (bottom of screen is the actual ground)
+        const grassGroundY = this.LOGICAL_HEIGHT * 0.95; // 95% down - grass surface level
+        if (ball.y + ball.radius >= grassGroundY && ball.vy > 0) {
             if (ball.firstCollision === null) ball.firstCollision = 'lawn';
-            ball.y = this.lawn.y - ball.radius;
+            ball.y = grassGroundY - ball.radius;
             const restitution = CONFIG.BALL_RESTITUTION[0] + Math.random() * (CONFIG.BALL_RESTITUTION[1] - CONFIG.BALL_RESTITUTION[0]);
             ball.vy *= -restitution * CONFIG.LAWN_RESTITUTION;
-            ball.vx *= 0.9;
+            ball.vx *= 0.9; // Grass friction
+            
+            // Aggressive settling to prevent endless rolling
+            if (Math.abs(ball.vy) < 100 && Math.abs(ball.vx) < 150) {
+                ball.vx *= 0.7; // Heavy friction on grass
+                ball.vy *= 0.5; // Reduce bounce quickly
+            }
         }
 
         // 2. Side wall collisions
@@ -856,47 +872,21 @@ class BucketBallGame {
         this.lawn.draw(this.ctx, this.state);
         this.bucket.draw(this.ctx);
 
-        // Always draw ball - it should be visible for player interaction
-        this.ball.draw(this.ctx, this.scale);
-        
-        // EMERGENCY BALL VISIBILITY OVERRIDE - GUARANTEED VISIBLE BALL
+        // CLEAN SINGLE BALL RENDERING - White ball with black outline
         this.ctx.save();
-        this.ctx.fillStyle = '#FFFFFF';  // Pure white
-        this.ctx.strokeStyle = '#000000'; // Black outline
-        this.ctx.lineWidth = 8;
+        this.ctx.fillStyle = '#FFFFFF';  // Pure white for visibility
+        this.ctx.strokeStyle = '#000000'; // Black outline for contrast
+        this.ctx.lineWidth = 6;
         this.ctx.globalAlpha = 1.0;
         
-        // Force ball at bottom center - ALWAYS VISIBLE
-        const emergencyBallX = this.LOGICAL_WIDTH / 2;
-        const emergencyBallY = this.LOGICAL_HEIGHT * 0.85;
-        const emergencyRadius = 50; // Large fixed radius - IMPOSSIBLE TO MISS
+        // Use actual ball position for interactivity - update ball radius for physics
+        const ballRadius = 45; // Large enough to see and click
+        this.ball.radius = ballRadius; // Update ball's collision radius to match visual
         
         this.ctx.beginPath();
-        this.ctx.arc(emergencyBallX, emergencyBallY, emergencyRadius, 0, Math.PI * 2);
+        this.ctx.arc(this.ball.x, this.ball.y, ballRadius, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.stroke();
-        this.ctx.restore();
-        
-        // PRODUCTION BALL VISIBILITY FIX: Always render bright yellow ball
-        // This ensures the ball is ALWAYS visible for gameplay
-        this.ctx.save();
-        
-        // Primary ball at the calculated ball position with enhanced visibility
-        this.ctx.fillStyle = '#FFFF00';  // Pure bright yellow RGB(255,255,0)
-        this.ctx.strokeStyle = '#000000'; // Black outline for contrast
-        this.ctx.lineWidth = 4;
-        this.ctx.beginPath();
-        this.ctx.arc(this.ball.x, this.ball.y, 32, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
-        
-        // Add white highlight for 3D golf ball effect
-        this.ctx.fillStyle = '#FFFFFF';
-        this.ctx.globalAlpha = 0.8;
-        this.ctx.beginPath();
-        this.ctx.arc(this.ball.x - 8, this.ball.y - 8, 6, 0, Math.PI * 2);
-        this.ctx.fill();
-        
         this.ctx.restore();
 
         // --- Draw UI elements ---
