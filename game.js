@@ -785,11 +785,14 @@ class BucketBallGame {
     resetGame() {
         this.score = 0;
         this.throwCount = 1;
-        this.resetThrow();
+        // Only reset ball position when starting a new game
+        this.ball.reset();
+        this.resetThrowOnly();
     }
 
-    resetThrow() {
-        this.ball.reset();
+    resetThrowOnly() {
+        // DON'T reset ball position - let it stay where it landed on grass!
+        // Only reset bucket position for visual variety
         this.bucket.reset();
         const windRange = CONFIG.WIND_RANGE;
         this.wind = windRange[0] + Math.random() * (windRange[1] - windRange[0]);
@@ -824,23 +827,8 @@ class BucketBallGame {
                 this.settleTimer = 0;
             }
             
-            // Aggressive auto-reset to prevent endless rolling
-            if (this.ball.y >= this.LOGICAL_HEIGHT * 0.9) { // Near bottom of screen
-                if (!this.missResetTimer) {
-                    this.missResetTimer = setTimeout(() => {
-                        if (this.state === GameState.LAUNCHED) {
-                            this.state = GameState.RESOLVING;
-                            this.ball.landed = true;
-                            this.resolveThrow();
-                        }
-                    }, 2000); // Force reset after 2 seconds maximum
-                }
-            } else {
-                if (this.missResetTimer) {
-                    clearTimeout(this.missResetTimer);
-                    this.missResetTimer = null;
-                }
-            }
+            // Let ball settle naturally where it lands - NO AUTO RESET
+            // Ball should stay on grass where it lands, like real golf
         }
         this.bucket.update(deltaTime);
         this.lawn.update(deltaTime);
@@ -855,26 +843,18 @@ class BucketBallGame {
             if (ball.firstCollision === null) ball.firstCollision = 'lawn';
             ball.y = grassGroundY - ball.radius;
             
-            // Realistic golf ball bounce on grass - small bounces that settle quickly
-            const restitution = CONFIG.BALL_RESTITUTION[0] + Math.random() * (CONFIG.BALL_RESTITUTION[1] - CONFIG.BALL_RESTITUTION[0]);
-            ball.vy *= -restitution * CONFIG.LAWN_RESTITUTION; // Much lower bounce
-            ball.vx *= CONFIG.FRICTION; // Apply grass friction
+            // Realistic golf ball settling on grass - minimal bounce, quick stop
+            ball.vx *= 0.4; // Heavy friction on grass - stops quickly
+            ball.vy = Math.abs(ball.vy) * 0.1; // Minimal upward bounce, mostly settles
             
-            // Add small trajectory deviation (±1-2 degrees) for realism
-            const deviationAngle = (Math.random() - 0.5) * 0.035; // ±2 degrees in radians
-            const speed = Math.hypot(ball.vx, ball.vy);
-            const currentAngle = Math.atan2(ball.vy, ball.vx);
-            const newAngle = currentAngle + deviationAngle;
-            ball.vx = Math.cos(newAngle) * speed * CONFIG.FRICTION;
-            ball.vy = Math.sin(newAngle) * speed * CONFIG.FRICTION;
-            
-            // Much more aggressive settling - ball should stop where it lands
-            if (Math.abs(ball.vy) < 80 && Math.abs(ball.vx) < 100) {
-                ball.vx *= 0.5; // Rapid horizontal deceleration
-                ball.vy *= 0.3; // Rapid vertical deceleration  
+            // Ball should settle quickly and stay where it lands
+            if (Math.abs(ball.vx) < 50) {
+                ball.vx = 0; // Complete horizontal stop
+                ball.vy = 0; // Complete vertical stop
+                ball.landed = true;
             }
             
-            console.log(`Grass bounce: restitution=${restitution.toFixed(2)}, deviation=${(deviationAngle * 180 / Math.PI).toFixed(1)}°, speed=${speed.toFixed(1)}`);
+            console.log(`Ball settled on grass at: x=${ball.x.toFixed(1)}, y=${ball.y.toFixed(1)}, landed=${ball.landed}`);
         }
 
         // 2. Side wall collisions - minimal bounce to prevent return to player
@@ -970,7 +950,7 @@ class BucketBallGame {
             } else {
                 this.throwCount++;
                 this.state = GameState.NEXT_THROW;
-                this.resetThrow();
+                this.resetThrowOnly(); // Don't reset ball position
             }
         }, 1500);
     }
