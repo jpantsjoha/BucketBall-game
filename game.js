@@ -40,8 +40,8 @@ const CONFIG = {
     // Colors
     COLORS: {
         BUCKET_MATTE_BLACK: '#111111',
-        BALL_GOLD: '#FFD700',
-        BALL_OUTLINE: '#8C6F00',
+        BALL_GOLD: '#FFFFFF',  // Changed to WHITE for maximum visibility
+        BALL_OUTLINE: '#000000',  // Black outline for contrast
         GRASS_BASE: '#2ECC71',
         GRASS_TUFTS: '#27AE60',
         GRASS_OUTLINE: '#0E5A2C',
@@ -160,40 +160,40 @@ class Ball {
         
         // Apply perspective scaling - ball gets smaller as it approaches bucket
         const perspectiveFactor = this.getPerspectiveFactor();
-        const radius = this.baseRadius * perspectiveFactor * 1.4; // 20% smaller base, with perspective
+        const radius = this.baseRadius * Math.max(2.0, scale) * perspectiveFactor * 3.0; // MUCH BIGGER with forced scale
         
         // Calculate screen Y position by offsetting with height (z)
         const screenY = this.y - this.z;
 
         // Draw shadow first
         ctx.save();
-        ctx.globalAlpha = 0.4;
+        ctx.globalAlpha = 0.3;
         ctx.fillStyle = '#000000';
         ctx.beginPath();
         ctx.arc(this.x + 4, this.y + 6, radius, 0, Math.PI * 2); // Shadow stays on the ground (y)
         ctx.fill();
         ctx.restore();
         
-        // Main ball - ULTRA BRIGHT YELLOW with rotation
+        // Main ball - WHITE for maximum visibility
         ctx.save();
         ctx.translate(this.x, screenY);
         ctx.rotate(this.rotation);
         
-        // Draw ball with maximum yellow visibility
-        ctx.fillStyle = '#FFFF00';  // Pure bright yellow
+        // Draw ball with WHITE for maximum visibility
+        ctx.fillStyle = '#FFFFFF';  // Pure white for maximum contrast
         ctx.beginPath();
         ctx.arc(0, 0, radius, 0, Math.PI * 2);
         ctx.fill();
         
         // Strong black outline for maximum contrast
         ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 4;  // Thicker outline
+        ctx.lineWidth = Math.max(5, radius * 0.25);  // Thick outline scales with ball
         ctx.stroke();
         
-        // Reduce dimple opacity so they don't dull the yellow
-        ctx.strokeStyle = '#FFCC00';
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.1;  // Much lighter dimples
+        // Gray dimples for golf ball texture
+        ctx.strokeStyle = '#666666';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.4;  // More visible dimples
         for (let i = 0; i < 3; i++) {
             ctx.beginPath();
             ctx.arc(radius * 0.3 * Math.cos(i * 2.1), radius * 0.3 * Math.sin(i * 2.1), radius * 0.15, 0, Math.PI * 2);
@@ -201,7 +201,7 @@ class Ball {
         }
         ctx.restore();
         
-        // White highlight for 3D effect
+        // Bright highlight for 3D effect on white ball
         ctx.save();
         ctx.fillStyle = '#FFFFFF';
         ctx.globalAlpha = 0.8;
@@ -209,6 +209,19 @@ class Ball {
         ctx.arc(this.x - radius * 0.25, screenY - radius * 0.25, radius * 0.15, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
+        
+        // Red visibility ring when ball is small/far
+        if (perspectiveFactor < 0.7) {
+            ctx.save();
+            ctx.strokeStyle = '#FF0000';
+            ctx.lineWidth = 3;
+            ctx.globalAlpha = 0.6;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, radius + 10, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
     }
     
     drawTrail(ctx) {
@@ -219,7 +232,7 @@ class Ball {
             
             ctx.save();
             ctx.globalAlpha = opacity;
-            ctx.fillStyle = '#FFFF00';
+            ctx.fillStyle = '#FFFFFF';  // White trail
             
             const trailRadius = this.baseRadius * point.size * 0.5 * (i / this.trail.length);
             ctx.beginPath();
@@ -390,9 +403,9 @@ class Bucket {
             
             ctx.drawImage(bucketImage, drawX, drawY, perspectiveWidth, perspectiveHeight);
         } else {
-            // Professional 3D bucket rendering when sprites aren't available
-            const perspectiveWidth = this.width * scale;
-            const perspectiveHeight = this.height * scale;
+            // ENHANCED VISIBLE bucket rendering when sprites aren't available
+            const perspectiveWidth = this.width * Math.max(3.0, scale) * 2.5; // MUCH BIGGER bucket
+            const perspectiveHeight = this.height * Math.max(3.0, scale) * 2.5;
             const drawX = this.x - perspectiveWidth / 2;
             const drawY = this.y - perspectiveHeight;
             
@@ -401,16 +414,16 @@ class Bucket {
             ctx.rotate(this.tilt * Math.PI / 180);
             ctx.translate(-this.x, -this.y);
             
-            // Draw 3D bucket with gradients instead of flat rectangle
+            // Draw HIGHLY VISIBLE bucket with strong contrast
             const gradient = ctx.createLinearGradient(drawX, drawY, drawX + perspectiveWidth, drawY + perspectiveHeight);
-            gradient.addColorStop(0, '#333333');
-            gradient.addColorStop(0.3, '#111111');
-            gradient.addColorStop(0.7, '#000000');
-            gradient.addColorStop(1, '#111111');
+            gradient.addColorStop(0, '#666666');  // Lighter for visibility
+            gradient.addColorStop(0.3, '#333333');
+            gradient.addColorStop(0.7, '#111111');
+            gradient.addColorStop(1, '#444444');
             
             ctx.fillStyle = gradient;
-            ctx.strokeStyle = '#555555';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#FFFFFF';  // WHITE outline for maximum visibility
+            ctx.lineWidth = 4;  // Thicker outline
             
             // Draw bucket shape
             ctx.beginPath();
@@ -539,16 +552,22 @@ class AssetManager {
         this.promises = [];
     }
 
-    loadImage(name, src) {
+    loadImage(name, src, loadingManager = null) {
         const promise = new Promise((resolve, reject) => {
             const img = new Image();
             img.onload = () => {
                 this.assets[name] = img;
+                if (loadingManager) {
+                    loadingManager.updateAssetProgress();
+                }
                 resolve(img);
             };
             img.onerror = () => {
                 // Resolve instead of reject so the game can start with fallback assets
                 console.warn(`Could not load image: ${src}. Using fallback.`);
+                if (loadingManager) {
+                    loadingManager.updateAssetProgress();
+                }
                 resolve(null);
             };
             img.src = src;
@@ -983,8 +1002,20 @@ class BucketBallGame {
     draw() {
         // --- Clear and setup canvas for new frame ---
         this.ctx.save();
-        this.ctx.scale(this.dpr, this.dpr);  // Only scale by DPR, use full screen
-        // Clear canvas without filling with background color to show grass background
+        
+        // CRITICAL FIX: Scale canvas to map logical coordinates to physical coordinates
+        // First apply device pixel ratio scaling
+        this.ctx.scale(this.dpr, this.dpr);
+        
+        // Then apply logical-to-physical coordinate scaling
+        const physicalWidth = this.canvas.width / this.dpr;
+        const physicalHeight = this.canvas.height / this.dpr;
+        const logicalScaleX = physicalWidth / this.LOGICAL_WIDTH;
+        const logicalScaleY = physicalHeight / this.LOGICAL_HEIGHT;
+        
+        this.ctx.scale(logicalScaleX, logicalScaleY);
+        
+        // Clear canvas using logical dimensions (now properly scaled)
         this.ctx.clearRect(0, 0, this.LOGICAL_WIDTH, this.LOGICAL_HEIGHT);
 
         // --- Draw UI elements ---
@@ -1181,27 +1212,47 @@ class LoadingManager {
         this.progressFill = document.querySelector('.progress-fill');
         this.isLoading = true;
         this.gameReady = false;
+        this.assetsLoaded = 0;
+        this.totalAssets = 0;
+        this.startTime = Date.now();
+        this.minimumDuration = 1500; // Minimum 1.5 seconds
+    }
+    
+    setTotalAssets(count) {
+        this.totalAssets = count;
+        console.log(`Loading ${count} assets...`);
+    }
+    
+    updateAssetProgress() {
+        this.assetsLoaded++;
+        const assetProgress = (this.assetsLoaded / this.totalAssets) * 100;
+        console.log(`Asset loaded: ${this.assetsLoaded}/${this.totalAssets} (${assetProgress.toFixed(0)}%)`);
+        return assetProgress;
     }
     
     async startLoading() {
-        // Random duration between 1-2 seconds (1000-2000ms)
-        const duration = 1000 + Math.random() * 1000;
-        console.log(`Loading animation duration: ${duration.toFixed(0)}ms`);
-        
-        // Animate progress bar
+        // Track both asset loading and minimum time
         let progress = 0;
         const stepTime = 50; // Update every 50ms
-        const increment = (100 / (duration / stepTime));
         
         const progressInterval = setInterval(() => {
-            progress += increment;
-            if (progress >= 100) {
+            const elapsed = Date.now() - this.startTime;
+            const timeProgress = Math.min((elapsed / this.minimumDuration) * 100, 100);
+            const assetProgress = (this.assetsLoaded / Math.max(this.totalAssets, 1)) * 100;
+            
+            // Use whichever is slower: actual assets or minimum time
+            progress = Math.min(timeProgress, assetProgress);
+            
+            // Check if we're done (both conditions met)
+            if (progress >= 100 && elapsed >= this.minimumDuration && this.assetsLoaded >= this.totalAssets) {
                 progress = 100;
                 clearInterval(progressInterval);
+                this.progressFill.style.width = '100%';
                 // Keep at 100% for a moment then hide
                 setTimeout(() => this.hideLoading(), 300);
+            } else {
+                this.progressFill.style.width = `${progress}%`;
             }
-            this.progressFill.style.width = `${progress}%`;
         }, stepTime);
     }
     
@@ -1237,13 +1288,24 @@ window.addEventListener('load', () => {
         loadingManager.startLoading();
         
         const assetManager = new AssetManager();
-        // Define all assets to load
-        assetManager.loadImage('upright_1x', 'assets/bucket_upright@1x.png');
-        assetManager.loadImage('upright_2x', 'assets/bucket_upright@2x.png');
-        assetManager.loadImage('upright_3x', 'assets/bucket_upright@3x.png');
-        assetManager.loadImage('tilt_left', 'assets/bucket_tilt_left@2x.png');
-        assetManager.loadImage('tilt_right', 'assets/bucket_tilt_right@2x.png');
-        assetManager.loadImage('toppled', 'assets/bucket_toppled_side@2x.png');
+        
+        // Track total assets for loading progress
+        const assetsToLoad = [
+            ['upright_1x', 'assets/bucket_upright@1x.png'],
+            ['upright_2x', 'assets/bucket_upright@2x.png'],
+            ['upright_3x', 'assets/bucket_upright@3x.png'],
+            ['tilt_left', 'assets/bucket_tilt_left@2x.png'],
+            ['tilt_right', 'assets/bucket_tilt_right@2x.png'],
+            ['toppled', 'assets/bucket_toppled_side@2x.png'],
+            ['bg_grass', 'images/bg_grass.png']  // Add grass background to loading
+        ];
+        
+        loadingManager.setTotalAssets(assetsToLoad.length);
+        
+        // Load all assets with progress tracking
+        assetsToLoad.forEach(([name, path]) => {
+            assetManager.loadImage(name, path, loadingManager);
+        });
 
         assetManager.loadAll().then(() => {
             console.log("Asset loading complete.");

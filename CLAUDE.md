@@ -111,3 +111,4 @@ After previous failures claiming "95% ready" when reality was 37/100, POCA enfor
 ---
 
 *Remember: We're not making a game about throwing balls into buckets. We're crafting moments of pure satisfaction that transcend the simplicity of the mechanics.*
+- only tell me that the app is ready and functional after you confirmed visually using playwright or selenium (screenshots) that all game objects are visible and player journey is possible with an evidenced successful UI UX tests successfully passed.
