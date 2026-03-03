@@ -14,9 +14,10 @@ const CONFIG = {
     GRAVITY: 2000, // px/s²
     WIND_RANGE: [-2.0, 2.0], // m/s
     WIND_FACTOR: 40, // Conversion factor from m/s to px/s²
-    BALL_RESTITUTION: [0.55, 0.65], // min/max
+    BALL_RESTITUTION: [0.25, 0.35], // Realistic golf ball bounce (reduced from 0.55-0.65)
     BALL_SPIN_JITTER: 0.05,
-    LAWN_RESTITUTION: 0.35,
+    LAWN_RESTITUTION: 0.20, // Grass absorbs energy (reduced from 0.35)
+    FRICTION: 0.85, // Grass friction reduces horizontal velocity
     LAWN_NORMAL_JITTER: 2, // degrees
     BUCKET_TILT_DAMPING: 0.95,
     BUCKET_TOPPLE_ANGLE: 18, // degrees
@@ -82,30 +83,33 @@ class Ball {
 
     reset() {
         this.x = this.game.LOGICAL_WIDTH / 2;
-        // Position ball at chalk line level for proper perspective calculation
+        // Position ball at chalk line level for guaranteed visibility
         this.y = this.game.LOGICAL_HEIGHT * 0.85; // Below chalk line for maximum visibility
+        this.z = 0; // Height above the ground
         this.vx = 0;
         this.vy = 0;
+        this.vz = 0;
         this.landed = false;
         this.firstCollision = null;
+        this.isInBucket = false; // Add this line
         this.trail = [];  // Clear trail
         this.rotation = 0;
         this.spinRate = 0;
-        console.log(`Ball reset to position: x=${this.x.toFixed(1)}, y=${this.y.toFixed(1)} on ${this.game.LOGICAL_WIDTH}x${this.game.LOGICAL_HEIGHT} canvas`);
+        console.log(`Ball reset to position: x=${this.x.toFixed(1)}, y=${this.y.toFixed(1)}, z=${this.z.toFixed(1)} on ${this.game.LOGICAL_WIDTH}x${this.game.LOGICAL_HEIGHT} canvas`);
     }
     
     getPerspectiveFactor() {
-        // Ball appears smaller when higher on screen (farther away in 3D space)
-        // At chalk line (bottom): factor = 1.0 (normal size)
-        // At bucket level (top): factor = 0.6 (40% smaller - but still visible)
-        const chalkLineY = this.game.LOGICAL_HEIGHT * 0.8;
-        const bucketY = this.game.LOGICAL_HEIGHT * 0.15;
+        // ADR-005: Ball shrinks as it approaches bucket (5m distance)
+        // At player position (85%): factor = 1.0 (large, close to player)
+        // At bucket position (20%): factor = 0.5 (50% smaller - maximum reduction)
+        const playerY = this.game.LOGICAL_HEIGHT * 0.85;  // Player throwing position
+        const bucketY = this.game.LOGICAL_HEIGHT * 0.20;  // Bucket in top 20%
         
-        // Ensure minimum visibility - never go below 0.6 scale
-        const relativePosition = Math.max(0, Math.min(1, (chalkLineY - this.y) / (chalkLineY - bucketY)));
+        // Calculate how far ball has traveled from player to bucket
+        const relativeDistance = Math.max(0, Math.min(1, (playerY - this.y) / (playerY - bucketY)));
         
-        // Scale from 1.0 at chalk line to 0.6 at bucket (40% reduction max)
-        return Math.max(0.6, 1.0 - (relativePosition * 0.4)); // NEVER go below 0.6 scale
+        // Ball must be 4x smaller than bucket when close - so 75% size reduction
+        return Math.max(0.25, 1.0 - relativeDistance * 0.75);
     }
     
     // Get effective radius for collision detection (accounts for perspective)
@@ -125,14 +129,26 @@ class Ball {
             }
         }
 
-        // Apply gravity and wind with slight randomness
-        const gravityJitter = 1 + (Math.random() - 0.5) * 0.02;  // ±1% variation
-        this.vy += CONFIG.GRAVITY * deltaTime * gravityJitter;
+        // Apply gravity to height (z-axis)
+        this.vz -= CONFIG.GRAVITY * deltaTime;
         this.vx += wind * CONFIG.WIND_FACTOR * deltaTime;
+        
+        // Air resistance over 5-meter distance - realistic velocity loss
+        const airResistance = 0.995; // 0.2% velocity loss per frame (realistic for golf ball)
+        this.vx *= airResistance;
+        this.vy *= airResistance;
+        this.vz *= airResistance;
+        
+        // Keep simple air resistance only - let gravity handle the trajectory naturally
 
         // Update position
         this.x += this.vx * deltaTime;
-        this.y += this.vy * deltaTime;
+        this.y += this.vy * deltaTime; // vy is now forward velocity
+        this.z += this.vz * deltaTime;
+        
+        // ADR-005: Ball must land on grass surface (95% screen) - GROUND LEVEL
+        // Chalk line (80%) is NOT ground - it's just player throwing position marker
+        // Ball can travel through entire grass area which IS the ground surface
         
         // Update rotation based on velocity
         this.rotation += (this.vx * 0.01 + this.spinRate) * deltaTime;
@@ -146,18 +162,21 @@ class Ball {
         const perspectiveFactor = this.getPerspectiveFactor();
         const radius = this.baseRadius * Math.max(2.0, scale) * perspectiveFactor * 3.0; // MUCH BIGGER with forced scale
         
+        // Calculate screen Y position by offsetting with height (z)
+        const screenY = this.y - this.z;
+
         // Draw shadow first
         ctx.save();
         ctx.globalAlpha = 0.3;
         ctx.fillStyle = '#000000';
         ctx.beginPath();
-        ctx.arc(this.x + 4, this.y + 6, radius * 0.8, 0, Math.PI * 2);
+        ctx.arc(this.x + 4, this.y + 6, radius, 0, Math.PI * 2); // Shadow stays on the ground (y)
         ctx.fill();
         ctx.restore();
         
         // Main ball - WHITE for maximum visibility
         ctx.save();
-        ctx.translate(this.x, this.y);
+        ctx.translate(this.x, screenY);
         ctx.rotate(this.rotation);
         
         // Draw ball with WHITE for maximum visibility
@@ -187,7 +206,7 @@ class Ball {
         ctx.fillStyle = '#FFFFFF';
         ctx.globalAlpha = 0.8;
         ctx.beginPath();
-        ctx.arc(this.x - radius * 0.3, this.y - radius * 0.3, radius * 0.3, 0, Math.PI * 2);
+        ctx.arc(this.x - radius * 0.25, screenY - radius * 0.25, radius * 0.15, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
         
@@ -238,17 +257,27 @@ class Bucket {
         // Set anchor point to be the bottom-center of the bucket
         this.x = this.game.LOGICAL_WIDTH / 2;
 
-        const yRange = CONFIG.BUCKET_Y_PERCENT_RANGE;
-        const yPercent = yRange[0] + Math.random() * (yRange[1] - yRange[0]);
-        // this.y is the BOTTOM of the bucket
-        this.y = this.game.LOGICAL_HEIGHT * yPercent;
+        // 45-degree perspective view: bucket is on same ground level as ball
+        // but appears higher due to viewing angle and distance
+        const grassGroundY = this.game.LOGICAL_HEIGHT * 0.95; // Actual ground level
+        
+        // ADR-005: Bucket positioned in top 20% to show 5-meter distance
+        // Visual position accounting for 25-35° downward perspective  
+        this.y = this.game.LOGICAL_HEIGHT * 0.20; // Top 20% screen for distance effect
+        this.actualGroundY = grassGroundY; // Store actual ground position for physics
 
+        // Add some horizontal variation for gameplay variety
         const jitter = (Math.random() - 0.5) * 2 * CONFIG.BUCKET_X_JITTER_PERCENT * this.game.LOGICAL_WIDTH;
         this.x += jitter;
         
         // Apply 3rd person perspective scaling - bucket appears smaller due to distance
         this.width = this.baseWidth * CONFIG.DEPTH_SCALE_FACTOR;
         this.height = this.baseHeight * CONFIG.DEPTH_SCALE_FACTOR;
+
+    // Calculate and store the physical rim height in game units for physics checks
+    const screenDistance = this.game.LOGICAL_HEIGHT * (0.85 - 0.20);
+    const unitsPerInch = screenDistance / CONFIG.REAL_DISTANCE;
+    this.rimHeightUnits = CONFIG.BUCKET_HEIGHT * unitsPerInch;
 
         this.tilt = 0; // degrees
         this.tiltVelocity = 0;
@@ -637,8 +666,8 @@ class BucketBallGame {
         this.lawn.height = this.LOGICAL_HEIGHT * CONFIG.LAWN_HEIGHT_PERCENT;
         this.lawn.y = this.LOGICAL_HEIGHT - this.lawn.height;
         
-        // CRITICAL FIX: Reset ball and bucket positions after resize to prevent off-screen rendering
-        this.ball.reset();
+        // DON'T reset ball position on resize - ball must stay where it landed!
+        // Only reset bucket to prevent off-screen positioning
         this.bucket.reset();
         
         console.log(`Resized to full screen: ${displayWidth}x${displayHeight}, Logical: ${this.LOGICAL_WIDTH.toFixed(0)}x${this.LOGICAL_HEIGHT.toFixed(0)}, Scale: ${this.scale.toFixed(3)}`);
@@ -692,8 +721,11 @@ class BucketBallGame {
             // Allow dragging from ANYWHERE below the chalk line (bottom 20% of screen)
             const chalkLineY = this.LOGICAL_HEIGHT * 0.8; // Chalk line position
             
-            // Very generous interaction - anywhere below chalk line
-            if (pos.y > chalkLineY) {
+            // Very generous interaction - anywhere below chalk line OR near ball
+            const ballDistance = Math.hypot(pos.x - this.ball.x, pos.y - this.ball.y);
+            const interactionRadius = 100; // Large interaction area around ball
+            
+            if (pos.y > chalkLineY || ballDistance <= interactionRadius) {
                 this.input.isPointerDown = true;
                 this.input.startPos = pos;
                 this.input.currentPos = pos;
@@ -702,6 +734,7 @@ class BucketBallGame {
                 
                 // Auto-arm when starting interaction
                 if (this.state === GameState.READY) {
+                    this.ball.reset();
                     this.state = GameState.ARMED;
                     if (navigator.vibrate) {
                         navigator.vibrate(50);
@@ -733,18 +766,27 @@ class BucketBallGame {
         if (this.state === GameState.ARMED) {
             // More natural throwing - any significant drag launches the ball
             if (swipeLength >= 30) {  // Lower threshold for more responsive feel
-                // Move ball to chalk line position for launch (X follows drag, Y at chalk line)
-                const chalkLineY = this.LOGICAL_HEIGHT * 0.8;
-                this.ball.x = this.LOGICAL_WIDTH / 2 + (dx * 0.5); // Allow some horizontal adjustment
-                this.ball.y = chalkLineY; // Always launch from chalk line
+                // Establish a real-world to game-unit scale
+                const screenDistance = this.LOGICAL_HEIGHT * (0.85 - 0.20); // Y-distance from player to bucket
+                const unitsPerInch = screenDistance / CONFIG.REAL_DISTANCE;
+
+                // Move ball to player position for launch
+                const playerY = this.LOGICAL_HEIGHT * 0.85;
+                this.ball.x = this.LOGICAL_WIDTH / 2 + (dx * 0.5);
+                this.ball.y = playerY;
+                // Set launch height based on PLAYER_HEIGHT in inches, converted to game units
+                this.ball.z = CONFIG.PLAYER_HEIGHT * unitsPerInch;
                 
-                // Scale velocity based on drag distance and screen size
-                const velocityScale = 3.0 + (this.scale * 2.0); // Adjust for screen size
-                this.ball.vx = -dx * velocityScale;
-                this.ball.vy = -dy * velocityScale;
+                // Simple realistic golf physics - direct drag to velocity mapping
+                const velocityScale = 3.0 + (this.scale * 2.0);
+                this.ball.vx = dx * velocityScale;  // Horizontal movement (left/right)
+                this.ball.vy = dy * velocityScale * 0.5;  // Vertical movement on screen (forward)
+                this.ball.vz = -dy * velocityScale * 0.6; // Upward velocity from flick
+                
+                console.log(`Simple Physics: dx=${dx.toFixed(1)}, dy=${dy.toFixed(1)} -> vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}, vz=${this.ball.vz.toFixed(1)}`);
                 this.state = GameState.LAUNCHED;
                 this.ball.landed = false;
-                console.log(`Ball launched from chalk line: x=${this.ball.x.toFixed(1)}, y=${this.ball.y.toFixed(1)}, vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
+                console.log(`Ball launched from player position: x=${this.ball.x.toFixed(1)}, y=${this.ball.y.toFixed(1)}, vx=${this.ball.vx.toFixed(1)}, vy=${this.ball.vy.toFixed(1)}`);
             } else if (swipeLength < 10 && !this.input.isDragMode) {
                 // Small tap when not dragging ball - just stay armed
                 this.disarmTimer = setTimeout(() => {
@@ -782,11 +824,14 @@ class BucketBallGame {
     resetGame() {
         this.score = 0;
         this.throwCount = 1;
-        this.resetThrow();
+        // Only reset ball position when starting a new game
+        this.ball.reset();
+        this.resetThrowOnly();
     }
 
-    resetThrow() {
-        this.ball.reset();
+    resetThrowOnly() {
+        // DON'T reset ball position - let it stay where it landed on grass!
+        // Only reset bucket position for visual variety
         this.bucket.reset();
         const windRange = CONFIG.WIND_RANGE;
         this.wind = windRange[0] + Math.random() * (windRange[1] - windRange[0]);
@@ -809,9 +854,10 @@ class BucketBallGame {
             this.checkCollisions();
 
             const ballSpeed = Math.hypot(this.ball.vx, this.ball.vy);
-            if (ballSpeed < CONFIG.SETTLE_VELOCITY_THRESHOLD) {
+            // Faster settling - reduce wait time and be more aggressive
+            if (ballSpeed < 50) { // Increased threshold for faster settling
                 this.settleTimer += deltaTime;
-                if (this.settleTimer > CONFIG.SETTLE_DURATION) {
+                if (this.settleTimer > 1.5) { // Reduced from 400ms to 1.5 seconds max
                     this.state = GameState.RESOLVING;
                     this.ball.landed = true;
                     this.resolveThrow();
@@ -820,23 +866,8 @@ class BucketBallGame {
                 this.settleTimer = 0;
             }
             
-            // Auto-reset if ball is rolling indefinitely at bottom of screen
-            if (this.ball.y >= this.LOGICAL_HEIGHT - 50 && ballSpeed > CONFIG.SETTLE_VELOCITY_THRESHOLD && ballSpeed < 100) {
-                if (!this.missResetTimer) {
-                    this.missResetTimer = setTimeout(() => {
-                        if (this.state === GameState.LAUNCHED) {
-                            this.state = GameState.RESOLVING;
-                            this.ball.landed = true;
-                            this.resolveThrow();
-                        }
-                    }, CONFIG.MISS_AUTO_RESET_DELAY);
-                }
-            } else {
-                if (this.missResetTimer) {
-                    clearTimeout(this.missResetTimer);
-                    this.missResetTimer = null;
-                }
-            }
+            // Let ball settle naturally where it lands - NO AUTO RESET
+            // Ball should stay on grass where it lands, like real golf
         }
         this.bucket.update(deltaTime);
         this.lawn.update(deltaTime);
@@ -844,24 +875,128 @@ class BucketBallGame {
 
     checkCollisions() {
         const ball = this.ball;
+        // 1. Bucket collision - evaluate first so a ball that is over the bucket
+        // isn't immediately settled by the grass logic below.
+        const bucket = this.bucket;
+        if (!bucket.isToppled) {
+            const bounds = bucket.getBounds();
+            const isInsideHorizontally = ball.x - ball.baseRadius > bounds.rimLeftX && ball.x + ball.baseRadius < bounds.rimRightX;
+            const bucketFrontY = bucket.y;
+            const bucketBackY = bucket.y - bucket.rimHeightUnits;
+            const isWithinDepth = ball.y < bucketFrontY && ball.y > bucketBackY;
 
-        // 1. Lawn collision
-        if (ball.y + ball.radius >= this.lawn.y && ball.vy > 0) {
+            // --- NEW 3D BUCKET COLLISION MODEL ---
+
+            // If ball is clearly in front of the bucket we simply skip the bucket-specific
+            // handling but continue to other collision checks (do not return early).
+            if (!(ball.y - ball.baseRadius > bucketFrontY)) {
+                console.log(`Bucket bounds: left:${bounds.rimLeftX.toFixed(1)}, right:${bounds.rimRightX.toFixed(1)}, frontY:${bucketFrontY.toFixed(1)}, backY:${bucketBackY.toFixed(1)}, rimHeight:${bucket.rimHeightUnits.toFixed(1)}`);
+                // Check for collision with the front face of the bucket (below the rim)
+                const ballDistanceToFront = ball.y - bucketFrontY;
+                const isHittingFrontFace = Math.abs(ballDistanceToFront) <= 1 && ball.vy < 0;
+                if (isInsideHorizontally && isHittingFrontFace && ball.z < bucket.rimHeightUnits && ball.z > 0) {
+                    console.log("Ball hit front face of bucket");
+                    console.log('y:', ball.y.toFixed(1), 'bucketFrontY:', bucketFrontY.toFixed(1), 'ball.vy:', ball.vy.toFixed(1));
+                    if (ball.firstCollision === null) {
+                        ball.firstCollision = 'bucket';
+                    }
+                    // Bounce back towards the player
+                    ball.vy *= -0.4;
+                    bucket.tiltVelocity += ball.vx * 0.01; // Add a little tilt
+                }
+                // SCENARIO 1: Ball lands on the floor INSIDE the bucket.
+                else if (isInsideHorizontally && isWithinDepth && ball.z <= 0) {
+                    if (ball.firstCollision === null) {
+                        ball.firstCollision = 'bucket';
+                    }
+                    const impactVelocity = Math.hypot(ball.vx, ball.vy, ball.vz);
+                    const perfectImpactVz = Math.sqrt(2 * CONFIG.GRAVITY * bucket.rimHeightUnits);
+                    const toppleThreshold = perfectImpactVz * 2;
+
+                    if (impactVelocity > toppleThreshold) {
+                        // Rather than deterministically toppling on every heavy impact,
+                        // apply a probabilistic topple so the bucket only overturns some
+                        // of the time. Make topple chance scale with impact strength so
+                        // very heavy impacts are more likely to topple (40-60%).
+                        const excess = Math.max(0, impactVelocity - toppleThreshold);
+                        // map excess to [0,1] over a reasonable range (toppleThreshold .. toppleThreshold*2)
+                        const t = Math.min(1, excess / (toppleThreshold));
+                        const toppleChance = 0.2 + (0.2 * t); // 0.2 -> 0.4
+                        console.log(`Heavy impact (v=${impactVelocity.toFixed(1)}). Topple chance: ${(toppleChance*100).toFixed(0)}%`);
+                        if (Math.random() < toppleChance) {
+                            bucket.isToppled = true;
+                            ball.vz *= -0.4; // Bounce off the toppling bucket
+                        } else {
+                            console.log("Heavy impact but bucket stayed upright (lucky).");
+                            // Treat as a successful soft landing (score)
+                            console.log("Ball landed inside the bucket");
+                            ball.landed = true;
+                            ball.vx = 0;
+                            ball.vy = 0;
+                            ball.vz = 0;
+                            ball.z = 0; // Rest on the floor
+                            this.state = GameState.RESOLVING;
+                            this.resolveThrow();
+                        }
+                    } else {
+                        // Soft landing inside: It's a score.
+                        console.log("Ball landed inside the bucket");
+                        ball.landed = true;
+                        ball.vx = 0;
+                        ball.vy = 0;
+                        ball.vz = 0;
+                        ball.z = 0; // Rest on the floor
+                        this.state = GameState.RESOLVING;
+                        this.resolveThrow();
+                    }
+                }
+                // SCENARIO 2: Ball hits the RIM of the bucket.
+                else if (isInsideHorizontally && Math.abs(ball.y - bucketBackY) < 1 && ball.vz < 0 && Math.abs(ball.z - bucket.rimHeightUnits) < ball.baseRadius) {
+                    console.log("Ball hit the rim of the bucket");
+                    if (ball.firstCollision === null) {
+                        ball.firstCollision = 'bucket';
+                    }
+                    // --- BACK RIM HIT ---
+                    // Deaden the velocity to make it drop into the bucket.
+                    ball.vz = -Math.abs(ball.vz * 1); // just let it drop.
+                    ball.vy = -Math.abs(ball.vy * 1);  // Kill most of the forward velocity.
+                    ball.vx *= 0.7;  // Some horizontal friction.
+                }
+            }
+        }
+
+        // 2. Realistic grass ground collision with proper energy loss
+        const grassGroundY = this.LOGICAL_HEIGHT * 0.95; // 95% down - grass surface level
+        if (ball.z <= 0 && ball.vz < 0 && ball.y < grassGroundY) {
+            console.log(`Ball hit ground at y=${ball.y.toFixed(1)} (grass level ${grassGroundY.toFixed(1)})`);
             if (ball.firstCollision === null) ball.firstCollision = 'lawn';
-            ball.y = this.lawn.y - ball.radius;
-            const restitution = CONFIG.BALL_RESTITUTION[0] + Math.random() * (CONFIG.BALL_RESTITUTION[1] - CONFIG.BALL_RESTITUTION[0]);
-            ball.vy *= -restitution * CONFIG.LAWN_RESTITUTION;
-            ball.vx *= 0.9;
+            ball.z = 0; // Position on the ground
+
+            console.log(`Pre-settle velocities: vx=${ball.vx.toFixed(1)}, vy=${ball.vy.toFixed(1)}, vz=${ball.vz.toFixed(1)}`);
+            
+            // Realistic golf ball settling on grass - minimal bounce, quick stop
+            ball.vx *= 0.4; // Heavy friction on grass - stops quickly
+            ball.vy *= 0.4; // Forward velocity also slows
+            ball.vz = Math.abs(ball.vz) * 0.5; // Minimal upward bounce, mostly settles
+            
+            // Ball should settle quickly and stay where it lands
+            if (Math.hypot(ball.vx, ball.vy, ball.vz) < 50) {
+                ball.vx = 0; // Complete horizontal stop
+                ball.vy = 0; // Complete forward stop
+                ball.vz = 0; // Complete vertical stop
+                ball.landed = true;
+            }
+            
+            console.log(`Ball settled on grass at: x=${ball.x.toFixed(1)}, y=${ball.y.toFixed(1)}, landed=${ball.landed}`);
         }
 
-        // 2. Side wall collisions
-        if ((ball.x - ball.radius * this.scale <= 0 && ball.vx < 0) || (ball.x + ball.radius * this.scale >= this.LOGICAL_WIDTH && ball.vx > 0)) {
-            ball.vx *= -0.8; // Bouncy walls
-            ball.x = Math.max(ball.radius * this.scale, Math.min(this.LOGICAL_WIDTH - ball.radius * this.scale, ball.x));
+        // 3. Side wall collisions - minimal bounce to prevent return to player
+        if ((ball.x - ball.baseRadius <= 0 && ball.vx < 0) || (ball.x + ball.baseRadius >= this.LOGICAL_WIDTH && ball.vx > 0)) {
+            ball.vx *= -0.2; // Minimal wall bounce (reduced from -0.4)  
+            ball.vy *= 0.6; // Significant vertical velocity reduction
+            ball.x = Math.max(ball.baseRadius, Math.min(this.LOGICAL_WIDTH - ball.baseRadius, ball.x));
+            console.log(`Wall collision: reduced velocities to vx=${ball.vx.toFixed(1)}, vy=${ball.vy.toFixed(1)}`);
         }
-
-        // 3. Bucket collision
-        this.bucket.checkCollision(ball);
     }
 
     draw() {
@@ -883,36 +1018,6 @@ class BucketBallGame {
         // Clear canvas using logical dimensions (now properly scaled)
         this.ctx.clearRect(0, 0, this.LOGICAL_WIDTH, this.LOGICAL_HEIGHT);
 
-        // --- Draw game objects in CORRECT ORDER FOR VISIBILITY ---
-        // 1. Background layer - lawn
-        this.lawn.draw(this.ctx, this.state);
-        
-        // 2. Middle layer - bucket
-        this.bucket.draw(this.ctx);
-        
-        // 3. TOP LAYER - BALL (ALWAYS ON TOP!) - Force minimum scale for visibility
-        this.ball.draw(this.ctx, Math.max(2.0, this.scale));
-        
-        // Add indicator arrow when ball is at starting position
-        if ((this.state === GameState.READY || this.state === GameState.ARMED)) {
-            const pulse = Math.sin(Date.now() * 0.003) * 0.3 + 0.7;
-            this.ctx.save();
-            this.ctx.fillStyle = '#FF0000';
-            this.ctx.globalAlpha = pulse;
-            
-            // Draw arrow pointing to ball
-            const arrowX = this.ball.x;
-            const arrowY = this.ball.y - 60;
-            this.ctx.beginPath();
-            this.ctx.moveTo(arrowX, arrowY);
-            this.ctx.lineTo(arrowX - 12, arrowY - 12);
-            this.ctx.lineTo(arrowX + 12, arrowY - 12);
-            this.ctx.closePath();
-            this.ctx.fill();
-            
-            this.ctx.restore();
-        }
-
         // --- Draw UI elements ---
         this.drawHUD();
         this.draw5mLine();
@@ -923,38 +1028,82 @@ class BucketBallGame {
             this.drawAimingLine();
         }
 
+        // --- Draw game objects ---
+        this.lawn.draw(this.ctx, this.state);
+        this.bucket.draw(this.ctx);
+
+        // Do not draw the ball if it's inside the bucket
+        if (this.ball.isInBucket) {
+            this.ctx.restore(); // Restore from the main context save
+            return;
+        }
+
+        // CLEAN SINGLE BALL RENDERING - White ball with black outline
+        this.ctx.save();
+        this.ctx.fillStyle = '#FFFFFF';  // Pure white for visibility
+        this.ctx.strokeStyle = '#000000'; // Black outline for contrast
+        this.ctx.lineWidth = 6;
+        this.ctx.globalAlpha = 1.0;
+        
+        // Use perspective-scaled ball radius for proper 3D physics
+        const perspectiveFactor = this.ball.getPerspectiveFactor();
+        const ballRadius = 45 * perspectiveFactor; // Scale with distance - shrinks near bucket
+        
+        const screenY = this.ball.y - this.ball.z;
+
+        this.ctx.beginPath();
+        this.ctx.arc(this.ball.x, screenY, ballRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        this.ctx.restore();
+
         this.ctx.restore();
     }
 
     resolveThrow() {
+        console.log("Resolving throw...");
         const ball = this.ball;
         const bucket = this.bucket;
-
+        console.log(`Ball first collision: ${ball.firstCollision}`);
         if (bucket.isToppled) {
             showToast("Bucket overturned!");
+            this.advanceToNextThrow(); // Advance after showing message
         } else {
+
             const bucketBounds = bucket.getBounds();
-            const isInside = ball.x > bucketBounds.rimLeftX &&
-                             ball.x < bucketBounds.rimRightX &&
-                             ball.y > bucketBounds.rimTop &&
-                             ball.y + ball.radius >= bucketBounds.bottom - 20;
+            const bucketCenterY = bucket.y - (this.bucket.rimHeightUnits / 2);
+            console.log(`Bucket Y: ${bucket.y.toFixed(1)}`);
+            const isInside = ball.x - ball.baseRadius > bucketBounds.rimLeftX &&
+                            ball.x + ball.baseRadius < bucketBounds.rimRightX &&
+                            Math.abs(ball.y - bucketCenterY) < bucket.rimHeightUnits / 2 &&
+                            ball.z >= 0 && ball.z < this.bucket.rimHeightUnits;
+
+            console.log(`Resolving throw: Ball at x=${ball.x.toFixed(1)}, y=${ball.y.toFixed(1)}, z=${ball.z.toFixed(1)} -> Inside bucket: ${isInside}`);
+            console.log(`Bucket bounds: Left=${bucketBounds.rimLeftX.toFixed(1)}, Right=${bucketBounds.rimRightX.toFixed(1)}, CenterY=${bucketCenterY.toFixed(1)}`);
 
             if (isInside) {
-                if (ball.firstCollision === 'lawn') {
-                    this.score += 2;
-                    showToast("TRICK SHOT! +2");
-                } else {
-                    this.score += 1;
-                    showToast("In the bucket! +1");
-                }
-            } else if (ball.firstCollision === 'bucket') {
-                showToast("Bounced out!");
+                ball.isInBucket = true; // Hide the ball immediately
+
+                // Delay showing the score message to make the ball disappear first
+                setTimeout(() => {
+                    if (ball.firstCollision === 'lawn') {
+                        this.score += 2;
+                        showToast("TRICK SHOT! +2");
+                    } else {
+                        this.score += 1;
+                        showToast("In the bucket! +1");
+                    }
+                    this.advanceToNextThrow(); // Advance after showing score
+                }, 250); // 250ms delay
             } else {
-                showToast("Missed!");
+                if (ball.firstCollision === 'bucket') {
+                    showToast("Bounced out!");
+                } else {
+                    showToast("Missed!");
+                }
+                this.advanceToNextThrow(); // Advance after showing message
             }
         }
-
-        this.advanceToNextThrow();
     }
 
     advanceToNextThrow() {
@@ -965,7 +1114,7 @@ class BucketBallGame {
             } else {
                 this.throwCount++;
                 this.state = GameState.NEXT_THROW;
-                this.resetThrow();
+                this.resetThrowOnly(); // Don't reset ball position
             }
         }, 1500);
     }
@@ -1040,8 +1189,8 @@ class BucketBallGame {
         const dx = this.input.currentPos.x - startX;
         const dy = this.input.currentPos.y - startY;
         const velocityScale = 3.0 + (this.scale * 2.0);
-        const previewVx = -dx * velocityScale * 0.3; // Scaled down for preview
-        const previewVy = -dy * velocityScale * 0.3;
+        const previewVx = dx * velocityScale * 0.3; // Horizontal movement
+        const previewVy = dy * velocityScale * 0.3; // Vertical movement matches drag directly
         
         this.ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
         for (let i = 1; i <= 5; i++) {
